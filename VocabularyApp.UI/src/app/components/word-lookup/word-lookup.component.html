@@ -43,7 +43,7 @@
       <div class="flex gap-3">
         <button (click)="toggleVocabularyView()"
           class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors duration-200">
-          {{ showVocabularyList ? '🔍 Search Words' : '📚 View My Words' }}
+          {{ showVocabularyList ? '🔍 Lookup Words' : '📚 View My Words' }}
         </button>
         <button (click)="backToDashboard()" class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg">
           ← Back to Dashboard
@@ -123,10 +123,18 @@
             <p *ngIf="currentWord.phonetic" class="text-lg text-gray-500">{{ currentWord.phonetic }}</p>
           </div>
           <div class="flex gap-3">
-            <!-- Place this near the displayed definitions or header for the current word -->
-            <button class="btn btn-primary" (click)="addToVocabulary()" [disabled]="!currentWord || isLoading">
+            <!-- Show "Already in Vocabulary" badge if word is from user's vocabulary -->
+            <div *ngIf="currentWord.source === 'user'"
+              class="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg font-medium">
+              ✅ Already in Your Vocabulary
+            </div>
+
+            <!-- Show "Add to Vocabulary" button if word is not yet in vocabulary -->
+            <button *ngIf="currentWord.source !== 'user'" class="btn btn-primary" (click)="addToVocabulary()"
+              [disabled]="!currentWord || isLoading">
               + Add to My Vocabulary
             </button>
+
             <button
               class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200">
               🔖 Save for Later

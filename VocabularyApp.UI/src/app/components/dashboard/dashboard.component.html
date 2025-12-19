@@ -5,7 +5,8 @@
         <h1 class="text-2xl font-bold">Welcome back, {{ currentUser?.username }}!</h1>
         <p class="text-white/80 text-sm">Ready to expand your vocabulary today?</p>
       </div>
-      <button class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors duration-200" (click)="logout()">
+      <button class="bg-white/20 hover:bg-white/30 text-white px-4 py-2 rounded-lg transition-colors duration-200"
+        (click)="logout()">
         Logout
       </button>
     </div>
@@ -13,25 +14,25 @@
 
   <main class="container mx-auto px-6 py-12">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-      <div 
-        *ngFor="let card of dashboardCards" 
-        class="bg-white rounded-2xl p-8 shadow-xl cursor-pointer transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl"
+      <div *ngFor="let card of dashboardCards"
+        class="bg-white rounded-2xl p-8 shadow-xl transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl"
+        [class.cursor-pointer]="card.isActive" [class.cursor-not-allowed]="!card.isActive"
         [class]="card.isActive ? 'hover:bg-gradient-to-br hover:from-primary-50 hover:to-secondary-50 border-2 border-transparent hover:border-primary-200' : 'opacity-75 hover:opacity-90'"
-        (click)="onCardClick(card)"
-      >
+        (click)="onCardClick(card)">
         <div class="text-4xl mb-4">{{ card.icon }}</div>
         <h3 class="text-xl font-bold text-gray-800 mb-3">{{ card.title }}</h3>
         <p class="text-gray-600 mb-6">{{ card.description }}</p>
-        
+
         <div class="mt-auto" *ngIf="!card.isActive">
-          <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+          <span
+            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
             Coming Soon
           </span>
         </div>
-        
+
         <div class="mt-auto" *ngIf="card.isActive">
           <span class="inline-flex items-center text-primary-600 font-medium">
-            Click to explore 
+            Click to explore
             <svg class="ml-2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
             </svg>
