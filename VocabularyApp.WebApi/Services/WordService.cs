@@ -294,6 +294,73 @@ namespace VocabularyApp.WebApi.Services
             }
         }
 
+        public async Task<ServiceResult<UserVocabularyResponseDto>> SearchUserVocabularyAsync(int userId, string searchTerm, int maxResults = 5)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    return ServiceResult<UserVocabularyResponseDto>.Success(new UserVocabularyResponseDto
+                    {
+                        Words = new List<UserVocabularyItemDto>(),
+                        TotalCount = 0,
+                        Page = 1,
+                        PageSize = maxResults
+                    });
+                }
+
+                var normalizedTerm = searchTerm.Trim().ToLower();
+
+                var items = await _db.UserWords
+                    .Include(uw => uw.Word)
+                        .ThenInclude(w => w.WordDefinitions)
+                    .Include(uw => uw.PartOfSpeech)
+                    .Where(uw => uw.UserId == userId && uw.Word.Text.ToLower().StartsWith(normalizedTerm))
+                    .OrderBy(uw => uw.Word.Text)
+                    .Take(maxResults)
+                    .ToListAsync();
+
+                var vocabularyItems = items.Select(uw =>
+                {
+                    // Get the primary definition for this part of speech
+                    var definition = uw.Word.WordDefinitions
+                        .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
+                        .OrderBy(wd => wd.DisplayOrder)
+                        .FirstOrDefault();
+
+                    return new UserVocabularyItemDto
+                    {
+                        Id = uw.Id,
+                        Word = uw.Word.Text,
+                        Definition = definition?.Definition ?? "No definition available",
+                        Example = definition?.Example,
+                        PartOfSpeech = uw.PartOfSpeech?.Name ?? "Unknown",
+                        Pronunciation = uw.Word.Pronunciation,
+                        AudioUrl = uw.Word.AudioUrl,
+                        AddedAt = uw.AddedAt,
+                        PersonalNotes = uw.PersonalNotes,
+                        CorrectAnswers = uw.CorrectAnswers,
+                        TotalAttempts = uw.TotalAttempts
+                    };
+                }).ToList();
+
+                var response = new UserVocabularyResponseDto
+                {
+                    Words = vocabularyItems,
+                    TotalCount = vocabularyItems.Count,
+                    Page = 1,
+                    PageSize = maxResults
+                };
+
+                return ServiceResult<UserVocabularyResponseDto>.Success(response);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching user vocabulary for userId {UserId} with term '{SearchTerm}'", userId, searchTerm);
+                return ServiceResult<UserVocabularyResponseDto>.Failure("Failed to search vocabulary");
+            }
+        }
+
         private static WordDto MapToDto(Word word)
         {
             var dto = new WordDto

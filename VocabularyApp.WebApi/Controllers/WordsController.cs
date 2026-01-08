@@ -139,5 +139,41 @@ namespace VocabularyApp.WebApi.Controllers
                 return StatusCode(500, new { success = false, error = "Internal server error" });
             }
         }
+
+        /// <summary>
+        /// Search user's vocabulary for autocomplete
+        /// GET: /api/words/vocabulary/search?term=abc
+        /// </summary>
+        [HttpGet("vocabulary/search")]
+        [Authorize]
+        public async Task<IActionResult> SearchUserVocabulary([FromQuery] string term)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                if (string.IsNullOrWhiteSpace(term))
+                {
+                    return Ok(new { success = true, data = new { words = new List<object>() } });
+                }
+
+                var result = await _wordService.SearchUserVocabularyAsync(userId, term, maxResults: 5);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to search vocabulary." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching user vocabulary");
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
     }
 }
