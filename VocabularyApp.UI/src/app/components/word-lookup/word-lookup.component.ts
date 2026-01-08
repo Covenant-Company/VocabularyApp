@@ -100,34 +100,35 @@ export class WordLookupComponent implements OnInit {
   }
 
   viewExistingWord(word: string): void {
-    // Fetch word from user's vocabulary
+    // Fetch word from user's vocabulary using search endpoint
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
 
-    this.apiService.get<any>(`/words/vocabulary?word=${encodeURIComponent(word)}`).subscribe({
+    this.apiService.get<any>(`/words/vocabulary/search?term=${encodeURIComponent(word)}`).subscribe({
       next: (res) => {
         if (res?.data?.words && res.data.words.length > 0) {
-          const userWord = res.data.words[0];
+          // Find the exact match (case-insensitive)
+          const userWord = res.data.words.find((w: any) => w.word.toLowerCase() === word.toLowerCase()) || res.data.words[0];
           // Map the user's vocabulary word to WordLookupResult format
           const mapped: WordLookupResult = {
             word: userWord.word,
-            phonetic: userWord.phonetic,
+            phonetic: userWord.pronunciation,
             partOfSpeechGroups: [
               {
                 partOfSpeech: userWord.partOfSpeech || 'unknown',
                 priority: 1,
                 definitions: [
                   {
-                    definition: userWord.definition || userWord.originalDefinition || '',
-                    example: userWord.example || userWord.originalExample
+                    definition: userWord.definition || '',
+                    example: userWord.example || ''
                   }
                 ],
                 isExpanded: false,
                 primaryDefinitions: [
                   {
-                    definition: userWord.definition || userWord.originalDefinition || '',
-                    example: userWord.example || userWord.originalExample
+                    definition: userWord.definition || '',
+                    example: userWord.example || ''
                   }
                 ]
               }
