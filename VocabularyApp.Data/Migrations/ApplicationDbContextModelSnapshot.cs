@@ -53,7 +53,7 @@ namespace VocabularyApp.Data.Migrations
 
                     b.HasIndex("UserId", "CreatedAt");
 
-                    b.ToTable("ChatHistories");
+                    b.ToTable("ChatHistories", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.PartOfSpeech", b =>
@@ -82,7 +82,7 @@ namespace VocabularyApp.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("PartsOfSpeech");
+                    b.ToTable("PartsOfSpeech", (string)null);
 
                     b.HasData(
                         new
@@ -183,7 +183,7 @@ namespace VocabularyApp.Data.Migrations
 
                     b.HasIndex("UserId", "AttemptedAt");
 
-                    b.ToTable("QuizResults");
+                    b.ToTable("QuizResults", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.SampleSentence", b =>
@@ -218,7 +218,7 @@ namespace VocabularyApp.Data.Migrations
 
                     b.HasIndex("UserWordId");
 
-                    b.ToTable("SampleSentences");
+                    b.ToTable("SampleSentences", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.User", b =>
@@ -257,7 +257,7 @@ namespace VocabularyApp.Data.Migrations
                     b.HasIndex("Username")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.UserWord", b =>
@@ -280,7 +280,7 @@ namespace VocabularyApp.Data.Migrations
                     b.Property<DateTime?>("LastReviewedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("PartOfSpeechId")
+                    b.Property<int>("PartOfSpeechId")
                         .HasColumnType("int");
 
                     b.Property<string>("PersonalNotes")
@@ -300,11 +300,12 @@ namespace VocabularyApp.Data.Migrations
 
                     b.HasIndex("PartOfSpeechId");
 
-                    b.HasIndex("UserId");
-
                     b.HasIndex("WordId");
 
-                    b.ToTable("UserWords");
+                    b.HasIndex("UserId", "WordId", "PartOfSpeechId")
+                        .IsUnique();
+
+                    b.ToTable("UserWords", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.Word", b =>
@@ -339,7 +340,7 @@ namespace VocabularyApp.Data.Migrations
                     b.HasIndex("Text")
                         .IsUnique();
 
-                    b.ToTable("Words");
+                    b.ToTable("Words", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.WordDefinition", b =>
@@ -378,7 +379,7 @@ namespace VocabularyApp.Data.Migrations
                     b.HasIndex("WordId", "PartOfSpeechId", "DisplayOrder")
                         .IsUnique();
 
-                    b.ToTable("WordDefinitions");
+                    b.ToTable("WordDefinitions", (string)null);
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.ChatHistory", b =>
@@ -432,9 +433,11 @@ namespace VocabularyApp.Data.Migrations
 
             modelBuilder.Entity("VocabularyApp.Data.Models.UserWord", b =>
                 {
-                    b.HasOne("VocabularyApp.Data.Models.PartOfSpeech", null)
+                    b.HasOne("VocabularyApp.Data.Models.PartOfSpeech", "PartOfSpeech")
                         .WithMany("UserWords")
-                        .HasForeignKey("PartOfSpeechId");
+                        .HasForeignKey("PartOfSpeechId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.HasOne("VocabularyApp.Data.Models.User", "User")
                         .WithMany("UserWords")
@@ -447,6 +450,8 @@ namespace VocabularyApp.Data.Migrations
                         .HasForeignKey("WordId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("PartOfSpeech");
 
                     b.Navigation("User");
 

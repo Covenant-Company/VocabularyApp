@@ -18,12 +18,15 @@ namespace VocabularyApp.Data.Migrations
                 name: "IX_UserWords_UserId",
                 table: "UserWords");
 
+            migrationBuilder.Sql(
+                "UPDATE UserWords SET PartOfSpeechId = 1 WHERE PartOfSpeechId IS NULL;" +
+                "UPDATE uw SET PartOfSpeechId = 1 FROM UserWords uw LEFT JOIN PartsOfSpeech pos ON uw.PartOfSpeechId = pos.Id WHERE pos.Id IS NULL;");
+
             migrationBuilder.AlterColumn<int>(
                 name: "PartOfSpeechId",
                 table: "UserWords",
                 type: "int",
                 nullable: false,
-                defaultValue: 0,
                 oldClrType: typeof(int),
                 oldType: "int",
                 oldNullable: true);
