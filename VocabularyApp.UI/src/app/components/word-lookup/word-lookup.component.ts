@@ -168,7 +168,7 @@ export class WordLookupComponent implements OnInit {
                 word: wordDto.text || word,
                 phonetic: wordDto.pronunciation,
                 audioUrl: wordDto.audioUrl,
-                source: lookupResp.wasFoundInCache ? 'user' : 'canonical',
+                source: lookupResp.isInUserVocabulary ? 'user' : (lookupResp.wasFoundInCache ? 'canonical' : 'external'),
                 partOfSpeechGroups: []
               } as any;
 
@@ -356,6 +356,14 @@ export class WordLookupComponent implements OnInit {
     audio.play().catch(error => {
       console.error('Failed to play audio:', error);
     });
+  }
+
+  viewWordDetails(wordText: string): void {
+    // Hide vocabulary list and show word details
+    this.showVocabularyList = false;
+    this.searchTerm = wordText;
+    // Fetch the full word details using the lookup endpoint
+    this.searchNewWord(wordText);
   }
 
 }
