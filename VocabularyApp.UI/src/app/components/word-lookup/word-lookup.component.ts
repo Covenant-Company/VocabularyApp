@@ -22,6 +22,7 @@ export class WordLookupComponent implements OnInit {
 
   currentWord: WordLookupResult | null = null;
   sortedGroups: PartOfSpeechGroup[] = [];
+  wordAddedToVocabulary = false; // Track if current word was just added
 
   // Vocabulary list properties
   showVocabularyList = false;
@@ -154,6 +155,8 @@ export class WordLookupComponent implements OnInit {
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
+    this.suggestions = []; // Clear suggestions to show error message if search fails
+    this.wordAddedToVocabulary = false; // Reset flag for new word
     // Use the lookup endpoint which returns full definitions
     this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word)}`).subscribe({
       next: (res) => {
@@ -205,11 +208,12 @@ export class WordLookupComponent implements OnInit {
 
               this.currentWord = mapped;
               this.processWordResult(this.currentWord);
+              this.searchTerm = ''; // Clear search input after successful lookup
             } else {
-              this.errorMessage = lookupResp.errorMessage || 'No definitions found.';
+              this.errorMessage = lookupResp.errorMessage || 'No definitions found for this word.';
             }
           } else {
-            this.errorMessage = (res as any).errorMessage || 'No definitions found.';
+            this.errorMessage = (res as any).errorMessage || 'No definitions found for this word.';
           }
         } catch (ex) {
           console.error('Mapping error:', ex);
@@ -220,18 +224,23 @@ export class WordLookupComponent implements OnInit {
       },
       error: (err) => {
         console.error('API error searching word:', err);
-        this.errorMessage = err.error?.errorMessage || 'Failed to fetch word definition.';
+
+        // Handle different error scenarios
+        if (err.status === 404) {
+          this.errorMessage = `Word "${word}" not found. Please check the spelling and try again.`;
+        } else if (err.error?.error) {
+          this.errorMessage = err.error.error;
+        } else if (err.error?.errorMessage) {
+          this.errorMessage = err.error.errorMessage;
+        } else if (err.message) {
+          this.errorMessage = err.message;
+        } else {
+          this.errorMessage = `Unable to find "${word}". Please check the spelling or try a different word.`;
+        }
+
         this.isLoading = false;
       }
     });
-
-    // TODO: Implement the search hierarchy:
-    // 1. Check canonical dictionary
-    // 2. Call external API if not found
-    // 3. Show spelling suggestions if API fails
-
-    console.log('Searching for new word:', word);
-    this.isLoading = false;
   }
 
   onSearchSubmit(): void {
@@ -301,6 +310,8 @@ export class WordLookupComponent implements OnInit {
         console.log('Add to vocabulary response:', res);
         // show user feedback with toast
         this.toastService.success(`Word "${this.currentWord?.word}" added to your vocabulary!`);
+        // Set flag to disable the button
+        this.wordAddedToVocabulary = true;
       },
       error: (err) => {
         console.error('Error adding word:', err);
@@ -316,9 +327,14 @@ export class WordLookupComponent implements OnInit {
     if (this.showVocabularyList && !this.vocabularyResponse) {
       this.loadVocabularyPage(1);
     }
-    // Clear current word when switching to vocabulary view
+    // Clear current word and search term when switching views
     if (this.showVocabularyList) {
       this.currentWord = null;
+      this.errorMessage = '';
+      this.searchTerm = '';
+    } else {
+      // Also clear when switching back to lookup view
+      this.searchTerm = '';
       this.errorMessage = '';
     }
   }
