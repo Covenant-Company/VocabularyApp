@@ -32,7 +32,15 @@ namespace VocabularyApp.WebApi.Controllers
 
             try
             {
-                var result = await _wordService.LookupWordAsync(word);
+                // Try to get userId from token if user is authenticated
+                int? userId = null;
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim != null && int.TryParse(userIdClaim, out var parsedUserId))
+                {
+                    userId = parsedUserId;
+                }
+
+                var result = await _wordService.LookupWordAsync(word, userId);
                 if (!result.IsSuccess)
                 {
                     return NotFound(new { success = false, error = result.Message ?? "Word not found." });

@@ -123,16 +123,11 @@
             <p *ngIf="currentWord.phonetic" class="text-lg text-gray-500">{{ currentWord.phonetic }}</p>
           </div>
           <div class="flex gap-3">
-            <!-- Show "Already in Vocabulary" badge if word is from user's vocabulary -->
-            <div *ngIf="currentWord.source === 'user'"
-              class="inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-lg font-medium">
-              ✅ Already in Your Vocabulary
-            </div>
-
-            <!-- Show "Add to Vocabulary" button if word is not yet in vocabulary -->
-            <button *ngIf="currentWord.source !== 'user'" class="btn btn-primary" (click)="addToVocabulary()"
-              [disabled]="!currentWord || isLoading">
-              + Add to My Vocabulary
+            <!-- Show "Add to Vocabulary" button, disabled if already in vocabulary -->
+            <button class="btn btn-primary" (click)="addToVocabulary()"
+              [disabled]="!currentWord || isLoading || currentWord.source === 'user' || wordAddedToVocabulary">
+              <span *ngIf="currentWord.source === 'user' || wordAddedToVocabulary">✅ Already in Your Vocabulary</span>
+              <span *ngIf="currentWord.source !== 'user' && !wordAddedToVocabulary">+ Add to My Vocabulary</span>
             </button>
 
             <button
@@ -258,8 +253,8 @@
       <!-- Vocabulary Grid -->
       <div *ngIf="!vocabularyLoading && vocabularyResponse?.words?.length"
         class="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <div *ngFor="let word of vocabularyResponse!.words"
-          class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+        <div *ngFor="let word of vocabularyResponse!.words" (click)="viewWordDetails(word.word)"
+          class="border border-gray-200 rounded-lg p-4 hover:shadow-md hover:border-primary-400 transition-all cursor-pointer">
           <div class="flex items-start justify-between mb-2">
             <div class="flex items-center gap-2">
               <h3 class="text-lg font-semibold text-gray-800">{{ word.word }}</h3>

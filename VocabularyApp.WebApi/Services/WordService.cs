@@ -20,12 +20,14 @@ namespace VocabularyApp.WebApi.Services
             _logger = logger;
         }
 
-        public async Task<ServiceResult<object>> LookupWordAsync(string term)
+        public async Task<ServiceResult<object>> LookupWordAsync(string term, int? userId = null)
         {
             if (string.IsNullOrWhiteSpace(term))
                 return ServiceResult<object>.Failure("Word is required.");
 
             var normalized = term.Trim();
+            bool isInUserVocabulary = false;
+
             try
             {
                 // 1) Try local canonical dictionary first
@@ -37,11 +39,20 @@ namespace VocabularyApp.WebApi.Services
                 if (word != null)
                 {
                     var dto = MapToDto(word);
+
+                    // Check if word is in user's vocabulary
+                    if (userId.HasValue)
+                    {
+                        isInUserVocabulary = await _db.UserWords
+                            .AnyAsync(uw => uw.UserId == userId.Value && uw.WordId == word.Id);
+                    }
+
                     var resp = new WordLookupResponse
                     {
                         Success = true,
                         Word = dto,
-                        WasFoundInCache = true
+                        WasFoundInCache = true,
+                        IsInUserVocabulary = isInUserVocabulary
                     };
                     return ServiceResult<object>.Success(resp);
                 }
@@ -115,11 +126,20 @@ namespace VocabularyApp.WebApi.Services
                     .FirstAsync(w => w.Id == newWord.Id);
 
                 var savedDto = MapToDto(saved);
+
+                // Check if word is in user's vocabulary (should be false for newly fetched words)
+                if (userId.HasValue)
+                {
+                    isInUserVocabulary = await _db.UserWords
+                        .AnyAsync(uw => uw.UserId == userId.Value && uw.WordId == saved.Id);
+                }
+
                 var response = new WordLookupResponse
                 {
                     Success = true,
                     Word = savedDto,
-                    WasFoundInCache = false
+                    WasFoundInCache = false,
+                    IsInUserVocabulary = isInUserVocabulary
                 };
                 return ServiceResult<object>.Success(response);
             }

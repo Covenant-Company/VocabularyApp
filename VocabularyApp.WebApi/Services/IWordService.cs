@@ -5,7 +5,7 @@ namespace VocabularyApp.WebApi.Services
 {
     public interface IWordService
     {
-        Task<ServiceResult<object>> LookupWordAsync(string term);
+        Task<ServiceResult<object>> LookupWordAsync(string term, int? userId = null);
         Task<ServiceResult<object>> AddWordAsync(AddWordRequest request);
         Task<ServiceResult<object>> AddToVocabularyAsync(int userId, AddWordRequest request);
         Task<ServiceResult<UserVocabularyResponseDto>> GetUserVocabularyAsync(int userId, int page = 1, int pageSize = 20);

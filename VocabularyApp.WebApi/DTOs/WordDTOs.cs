@@ -31,4 +31,5 @@ public class WordLookupResponse
     public string? ErrorMessage { get; set; }
     public WordDto? Word { get; set; }
     public bool WasFoundInCache { get; set; } // Indicates if word was found in our local database vs external API
+    public bool IsInUserVocabulary { get; set; } // Indicates if word is in the user's personal vocabulary
 }
