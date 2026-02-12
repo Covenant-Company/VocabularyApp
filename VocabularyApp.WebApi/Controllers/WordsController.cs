@@ -131,7 +131,7 @@ namespace VocabularyApp.WebApi.Controllers
                 }
 
                 if (page < 1) page = 1;
-                if (pageSize < 1 || pageSize > 100) pageSize = 20;
+                if (pageSize < 1 || pageSize > 10000) pageSize = 20; // Increased max to 10000 for vocabulary search
 
                 var result = await _wordService.GetUserVocabularyAsync(userId, page, pageSize);
                 if (!result.IsSuccess)

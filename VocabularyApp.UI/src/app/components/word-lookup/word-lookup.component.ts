@@ -28,6 +28,7 @@ export class WordLookupComponent implements OnInit {
   showVocabularyList = false;
   vocabularyLoading = false;
   vocabularyResponse: VocabularyResponse | null = null;
+  vocabularySearchQuery = ''; // Search query for filtering vocabulary list
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
 
@@ -93,7 +94,8 @@ export class WordLookupComponent implements OnInit {
 
   selectSuggestion(suggestion: SearchSuggestion): void {
     if (suggestion.type === 'existing') {
-      this.viewExistingWord(suggestion.word);
+      // Use searchNewWord for existing words too to get full definitions
+      this.searchNewWord(suggestion.word);
     } else {
       this.searchNewWord(suggestion.word);
     }
@@ -332,6 +334,7 @@ export class WordLookupComponent implements OnInit {
       this.currentWord = null;
       this.errorMessage = '';
       this.searchTerm = '';
+      this.vocabularySearchQuery = ''; // Clear vocabulary search
     } else {
       // Also clear when switching back to lookup view
       this.searchTerm = '';
@@ -343,13 +346,14 @@ export class WordLookupComponent implements OnInit {
     if (page < 1) return;
 
     this.vocabularyLoading = true;
-    this.apiService.get<any>(`/words/vocabulary?page=${page}&pageSize=20`).subscribe({
+    // Load all words (use a large page size to get everything for search functionality)
+    this.apiService.get<any>(`/words/vocabulary?page=${page}&pageSize=1000`).subscribe({
       next: (res) => {
         if (res && res.success && res.data) {
           this.vocabularyResponse = res.data;
         } else {
           console.error('Invalid vocabulary response format:', res);
-          this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 };
+          this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
         }
         this.vocabularyLoading = false;
       },
@@ -357,7 +361,7 @@ export class WordLookupComponent implements OnInit {
         console.error('Error loading vocabulary:', err);
         this.vocabularyLoading = false;
         // Show empty state or error message
-        this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 };
+        this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
       }
     });
   }
@@ -382,4 +386,13 @@ export class WordLookupComponent implements OnInit {
     this.searchNewWord(wordText);
   }
 
+  get filteredVocabularyWords() {
+    if (!this.vocabularyResponse?.words) return [];
+    if (!this.vocabularySearchQuery.trim()) return []; // Return empty array when no search query
+
+    const query = this.vocabularySearchQuery.toLowerCase().trim();
+    return this.vocabularyResponse.words.filter(word =>
+      word.word.toLowerCase().startsWith(query) // Use startsWith to match from beginning
+    );
+  }
 }
