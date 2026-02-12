@@ -342,18 +342,36 @@ namespace VocabularyApp.WebApi.Services
 
                 var vocabularyItems = items.Select(uw =>
                 {
-                    // Get the primary definition for this part of speech
-                    var definition = uw.Word.WordDefinitions
+                    var definitions = uw.Word.WordDefinitions
                         .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
                         .OrderBy(wd => wd.DisplayOrder)
-                        .FirstOrDefault();
+                        .ToList();
+
+                    var definitionTexts = definitions
+                        .Select(d => d.Definition)
+                        .Where(text => !string.IsNullOrWhiteSpace(text))
+                        .ToList();
+
+                    var aggregatedDefinition = definitionTexts.Count > 0
+                        ? string.Join("; ", definitionTexts)
+                        : "No definition available";
+
+                    string? example = null;
+                    foreach (var def in definitions)
+                    {
+                        if (!string.IsNullOrWhiteSpace(def.Example))
+                        {
+                            example = def.Example;
+                            break;
+                        }
+                    }
 
                     return new UserVocabularyItemDto
                     {
                         Id = uw.Id,
                         Word = uw.Word.Text,
-                        Definition = definition?.Definition ?? "No definition available",
-                        Example = definition?.Example,
+                        Definition = aggregatedDefinition,
+                        Example = example,
                         PartOfSpeech = uw.PartOfSpeech?.Name ?? "Unknown",
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
