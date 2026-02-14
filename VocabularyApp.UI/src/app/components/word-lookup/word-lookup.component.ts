@@ -23,12 +23,14 @@ export class WordLookupComponent implements OnInit {
   currentWord: WordLookupResult | null = null;
   sortedGroups: PartOfSpeechGroup[] = [];
   wordAddedToVocabulary = false; // Track if current word was just added
+  viewingFromVocabularyList = false;
 
   // Vocabulary list properties
   showVocabularyList = false;
   vocabularyLoading = false;
   vocabularyResponse: VocabularyResponse | null = null;
   vocabularySearchQuery = ''; // Search query for filtering vocabulary list
+  private vocabularyNeedsRefresh = false;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
 
@@ -153,12 +155,13 @@ export class WordLookupComponent implements OnInit {
     });
   }
 
-  searchNewWord(word: string): void {
+  searchNewWord(word: string, fromVocabularyList = false): void {
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
     this.suggestions = []; // Clear suggestions to show error message if search fails
     this.wordAddedToVocabulary = false; // Reset flag for new word
+    this.viewingFromVocabularyList = fromVocabularyList;
     // Use the lookup endpoint which returns full definitions
     this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word)}`).subscribe({
       next: (res) => {
@@ -314,6 +317,10 @@ export class WordLookupComponent implements OnInit {
         this.toastService.success(`Word "${this.currentWord?.word}" added to your vocabulary!`);
         // Set flag to disable the button
         this.wordAddedToVocabulary = true;
+        if (this.currentWord) {
+          this.currentWord.source = 'user';
+        }
+        this.vocabularyNeedsRefresh = true;
       },
       error: (err) => {
         console.error('Error adding word:', err);
@@ -326,7 +333,7 @@ export class WordLookupComponent implements OnInit {
   // Vocabulary list methods
   toggleVocabularyView(): void {
     this.showVocabularyList = !this.showVocabularyList;
-    if (this.showVocabularyList && !this.vocabularyResponse) {
+    if (this.showVocabularyList && (!this.vocabularyResponse || this.vocabularyNeedsRefresh)) {
       this.loadVocabularyPage(1);
     }
     // Clear current word and search term when switching views
@@ -335,10 +342,12 @@ export class WordLookupComponent implements OnInit {
       this.errorMessage = '';
       this.searchTerm = '';
       this.vocabularySearchQuery = ''; // Clear vocabulary search
+      this.viewingFromVocabularyList = false;
     } else {
       // Also clear when switching back to lookup view
       this.searchTerm = '';
       this.errorMessage = '';
+      this.viewingFromVocabularyList = false;
     }
   }
 
@@ -355,6 +364,7 @@ export class WordLookupComponent implements OnInit {
           console.error('Invalid vocabulary response format:', res);
           this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
         }
+        this.vocabularyNeedsRefresh = false;
         this.vocabularyLoading = false;
       },
       error: (err) => {
@@ -362,6 +372,7 @@ export class WordLookupComponent implements OnInit {
         this.vocabularyLoading = false;
         // Show empty state or error message
         this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
+        this.vocabularyNeedsRefresh = false;
       }
     });
   }
@@ -383,7 +394,7 @@ export class WordLookupComponent implements OnInit {
     this.showVocabularyList = false;
     this.searchTerm = wordText;
     // Fetch the full word details using the lookup endpoint
-    this.searchNewWord(wordText);
+    this.searchNewWord(wordText, true);
   }
 
   get filteredVocabularyWords() {

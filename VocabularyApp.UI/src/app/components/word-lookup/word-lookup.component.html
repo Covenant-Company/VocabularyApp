@@ -122,7 +122,7 @@
             </div>
             <p *ngIf="currentWord.phonetic" class="text-lg text-gray-500">{{ currentWord.phonetic }}</p>
           </div>
-          <div class="flex gap-3">
+          <div *ngIf="!viewingFromVocabularyList" class="flex gap-3">
             <!-- Show "Add to Vocabulary" button, disabled if already in vocabulary -->
             <button class="btn btn-primary" (click)="addToVocabulary()"
               [disabled]="!currentWord || isLoading || currentWord.source === 'user' || wordAddedToVocabulary">
