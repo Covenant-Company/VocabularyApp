@@ -38,6 +38,10 @@ export class WordLookupComponent implements OnInit {
     this.router.navigate(['/dashboard']);
   }
 
+  goToQuiz(): void {
+    this.router.navigate(['/quiz']);
+  }
+
   ngOnInit(): void { }
 
   onSearchInput(): void {

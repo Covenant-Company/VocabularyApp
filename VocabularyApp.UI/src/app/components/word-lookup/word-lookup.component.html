@@ -41,6 +41,10 @@
         <p class="text-white/80">Search your vocabulary or discover new words</p>
       </div>
       <div class="flex gap-3">
+        <button (click)="goToQuiz()"
+          class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors duration-200">
+          🧠 Take Quiz
+        </button>
         <button (click)="toggleVocabularyView()"
           class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg transition-colors duration-200">
           {{ showVocabularyList ? '🔍 Lookup Words' : '📚 View My Words' }}

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using VocabularyApp.WebApi.DTOs;
 using VocabularyApp.WebApi.Models;
 using VocabularyApp.WebApi.Services;       // AddWordRequest (the DTO that lives under Models)
 
@@ -180,6 +181,105 @@ namespace VocabularyApp.WebApi.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error searching user vocabulary");
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Start a new quiz session from the user's vocabulary
+        /// POST: /api/words/quiz/start
+        /// </summary>
+        [HttpPost("quiz/start")]
+        [Authorize]
+        public async Task<IActionResult> StartQuiz([FromBody] StartQuizRequestDto request)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                var quizRequest = request ?? new StartQuizRequestDto();
+                var result = await _wordService.StartQuizAsync(userId, quizRequest);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to start quiz." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error starting quiz");
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Submit quiz answers for scoring
+        /// POST: /api/words/quiz/submit
+        /// </summary>
+        [HttpPost("quiz/submit")]
+        [Authorize]
+        public async Task<IActionResult> SubmitQuiz([FromBody] QuizSubmitRequestDto request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new { success = false, error = "Request body is required." });
+            }
+
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                var result = await _wordService.SubmitQuizAsync(userId, request);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to submit quiz." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error submitting quiz");
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
+        /// Get recent quiz history for the current user
+        /// GET: /api/words/quiz/history?take=5
+        /// </summary>
+        [HttpGet("quiz/history")]
+        [Authorize]
+        public async Task<IActionResult> GetQuizHistory([FromQuery] int take = 5)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                var result = await _wordService.GetRecentQuizHistoryAsync(userId, take);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to fetch quiz history." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving quiz history");
                 return StatusCode(500, new { success = false, error = "Internal server error" });
             }
         }
