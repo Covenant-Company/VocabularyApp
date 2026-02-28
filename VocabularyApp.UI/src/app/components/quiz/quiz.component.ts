@@ -4,6 +4,8 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
 import {
+  QuizHistoryItem,
+  QuizHistoryResponse,
   QuizAnswerSubmission,
   QuizMode,
   QuizQuestion,
@@ -26,6 +28,10 @@ export class QuizComponent {
   isLoading = false;
   isSubmitting = false;
   errorMessage = '';
+  quizHistory: QuizHistoryItem[] = [];
+  quizHistoryLoading = false;
+  quizHistoryError = '';
+  showQuizHistory = false;
 
   quizSession: QuizStartResponse | null = null;
   quizResult: QuizSubmitResponse | null = null;
@@ -131,6 +137,14 @@ export class QuizComponent {
     this.startQuiz();
   }
 
+  toggleQuizHistory(): void {
+    this.showQuizHistory = !this.showQuizHistory;
+
+    if (this.showQuizHistory && this.quizHistory.length === 0 && !this.quizHistoryLoading) {
+      this.loadRecentQuizHistory();
+    }
+  }
+
   private persistCurrentAnswer(): void {
     if (!this.currentQuestion || this.selectedOptionId === null) {
       return;
@@ -179,6 +193,27 @@ export class QuizComponent {
       error: error => {
         this.errorMessage = error?.error?.error || error?.error?.errorMessage || 'Unable to submit quiz.';
         this.isSubmitting = false;
+      }
+    });
+  }
+
+  private loadRecentQuizHistory(): void {
+    this.quizHistoryLoading = true;
+    this.quizHistoryError = '';
+
+    this.apiService.get<QuizHistoryResponse>('/words/quiz/history?take=5').subscribe({
+      next: response => {
+        if (response.success && response.data) {
+          this.quizHistory = response.data.items || [];
+        } else {
+          this.quizHistoryError = response.message || 'Unable to load quiz history.';
+        }
+
+        this.quizHistoryLoading = false;
+      },
+      error: error => {
+        this.quizHistoryError = error?.error?.error || error?.error?.errorMessage || 'Unable to load quiz history.';
+        this.quizHistoryLoading = false;
       }
     });
   }

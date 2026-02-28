@@ -617,6 +617,7 @@ namespace VocabularyApp.WebApi.Services
                     {
                         UserId = userId,
                         UserWordId = question.UserWordId,
+                        QuizSessionId = request.SessionId,
                         QuizType = QuizType.Definition,
                         IsCorrect = hasAnswer && selectedOptionId == question.CorrectOptionId,
                         UserAnswer = selectedOption?.Text,
@@ -659,12 +660,12 @@ namespace VocabularyApp.WebApi.Services
 
                 var groupedResults = await _db.QuizResults
                     .Where(qr => qr.UserId == userId)
-                    .GroupBy(qr => qr.AttemptedAt)
-                    .OrderByDescending(group => group.Key)
+                    .GroupBy(qr => qr.QuizSessionId)
+                    .OrderByDescending(group => group.Max(item => item.AttemptedAt))
                     .Take(normalizedTake)
                     .Select(group => new QuizHistoryItemDto
                     {
-                        AttemptedAtUtc = group.Key,
+                        AttemptedAtUtc = group.Max(item => item.AttemptedAt),
                         TotalQuestions = group.Count(),
                         CorrectAnswers = group.Count(item => item.IsCorrect),
                         ScorePercentage = group.Count() > 0

@@ -127,7 +127,7 @@ public class ApplicationDbContext : DbContext
                 .OnDelete(DeleteBehavior.Cascade);
 
             // Index for performance on quiz analytics
-            entity.HasIndex(e => new { e.UserId, e.AttemptedAt });
+            entity.HasIndex(e => new { e.UserId, e.QuizSessionId, e.AttemptedAt });
         });
 
         // Configure ChatHistory entity

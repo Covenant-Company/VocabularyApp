@@ -15,7 +15,7 @@
     </div>
 
     <div *ngIf="!quizSession && !quizResult" class="bg-white rounded-2xl p-8 shadow-xl">
-      <h2 class="text-2xl font-bold text-gray-800 mb-6">Start a Quiz</h2>
+      <h2 class="text-2xl font-bold text-gray-800 mb-6">Quiz</h2>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
         <div>
@@ -39,10 +39,39 @@
       <button (click)="startQuiz()" [disabled]="isLoading"
         class="px-6 py-3 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 text-white rounded-lg font-medium transition-colors duration-200">
         <span *ngIf="isLoading" class="inline-block animate-spin mr-2">⟳</span>
-        {{ isLoading ? 'Preparing Quiz...' : 'Start Quiz' }}
+        {{ isLoading ? 'Preparing Quiz...' : 'Quiz' }}
+      </button>
+
+      <button (click)="toggleQuizHistory()"
+        class="ml-3 px-6 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200">
+        {{ showQuizHistory ? 'Hide Recent Quiz Results' : 'Recent Quiz Results' }}
       </button>
 
       <p class="text-sm text-gray-500 mt-4">You need at least 4 saved words to generate multiple-choice questions.</p>
+
+      <div *ngIf="showQuizHistory" class="mt-6 border border-gray-200 rounded-lg p-4">
+        <div *ngIf="quizHistoryLoading" class="text-gray-500 text-sm">Loading recent quiz history...</div>
+
+        <div *ngIf="!quizHistoryLoading && quizHistoryError" class="text-red-600 text-sm">
+          {{ quizHistoryError }}
+        </div>
+
+        <div *ngIf="!quizHistoryLoading && !quizHistoryError && quizHistory.length === 0" class="text-gray-500 text-sm">
+          No quiz attempts yet.
+        </div>
+
+        <div *ngIf="!quizHistoryLoading && quizHistory.length > 0" class="space-y-3">
+          <div *ngFor="let item of quizHistory" class="border border-gray-200 rounded-lg px-4 py-3">
+            <div class="flex items-center justify-between">
+              <div class="text-sm text-gray-700">
+                {{ item.correctAnswers }} / {{ item.totalQuestions }} correct
+              </div>
+              <div class="text-sm font-semibold text-primary-700">{{ item.scorePercentage }}%</div>
+            </div>
+            <div class="text-xs text-gray-500 mt-1">{{ item.attemptedAtUtc | date:'medium' }}</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div *ngIf="quizSession && !quizResult" class="bg-white rounded-2xl p-8 shadow-xl">
