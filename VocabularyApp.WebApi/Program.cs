@@ -7,6 +7,7 @@ using VocabularyApp.Data;
 using VocabularyApp.WebApi.Helpers;
 using VocabularyApp.WebApi.Services;
 
+AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -62,7 +63,6 @@ builder.Services.AddControllers();
 
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
 builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
@@ -101,15 +101,14 @@ builder.Services.AddSwaggerGen(c =>
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
-    {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Vocabulary App API v1");
-        c.RoutePrefix = "swagger";
-    });
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Vocabulary App API v1");
+    c.RoutePrefix = "swagger";
+});
+
 
 // app.UseHttpsRedirection();
 
@@ -124,9 +123,8 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Redirect root to Swagger UI in development
-if (app.Environment.IsDevelopment())
-{
-    app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-}
+
+app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+
 
 app.Run();

@@ -1,10 +1,10 @@
 # Vocabulary Building Application - Implementation Summary
 
 ## Overview
-A comprehensive vocabulary building application built with .NET 9.0 Web API backend, featuring user management, word lookup, external dictionary integration, and JWT authentication.
+A comprehensive vocabulary building application built with .NET 8.0 Web API backend, featuring user management, word lookup, external dictionary integration, and JWT authentication.
 
 ## Architecture
-- **Backend**: .NET 9.0 Web API with Entity Framework Core
+- **Backend**: .NET 8.0 Web API with Entity Framework Core
 - **Database**: SQL Server LocalDB (VocabularyAppDb_Dev)
 - **Authentication**: JWT Bearer tokens with secure password hashing
 - **API Documentation**: Swagger/OpenAPI with JWT support
@@ -134,8 +134,8 @@ VocabularyApp/
 4. **Database verification**: Connect to LocalDB with SSMS
 
 ## Technology Stack
-- **.NET 9.0**: Latest .NET framework
-- **Entity Framework Core 9.0.9**: Object-relational mapping
+- **.NET 8.0 (LTS)**: Stable framework for hosting compatibility
+- **Entity Framework Core 8.0.10**: Object-relational mapping
 - **SQL Server LocalDB**: Development database
 - **JWT Bearer Authentication**: Microsoft.AspNetCore.Authentication.JwtBearer
 - **Swagger/OpenAPI**: API documentation and testing

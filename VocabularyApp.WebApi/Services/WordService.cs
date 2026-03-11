@@ -594,10 +594,11 @@ namespace VocabularyApp.WebApi.Services
                 var attemptedAtUtc = DateTime.UtcNow;
                 var persistedResults = new List<QuizResult>();
                 var skippedStaleQuestions = 0;
-                var validUserWordIds = await _db.UserWords
+                var validUserWordIdsList = await _db.UserWords
                     .Where(uw => uw.UserId == userId)
                     .Select(uw => uw.Id)
-                    .ToHashSetAsync();
+                    .ToListAsync();
+                var validUserWordIds = new HashSet<int>(validUserWordIdsList);
 
                 foreach (var question in session.Questions)
                 {

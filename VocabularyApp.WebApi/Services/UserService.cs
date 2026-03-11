@@ -81,7 +81,7 @@ public class UserService : IUserService
             return new AuthResponse
             {
                 Success = false,
-                ErrorMessage = "An error occurred while creating the user account"
+                ErrorMessage = ex.Message
             };
         }
     }
