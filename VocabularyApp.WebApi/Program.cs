@@ -10,12 +10,17 @@ using VocabularyApp.WebApi.Services;
 AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
 var builder = WebApplication.CreateBuilder(args);
 
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Select(origin => origin.TrimEnd('/'))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray()
+    ?? new[] { "http://localhost:4200", "https://localhost:4200" };
+
 // Add services to the container.
-// Configure Entity Framework
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Configure JWT Authentication
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
 var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey not configured");
 
@@ -37,31 +42,25 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 
-// Configure CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAngular", policy =>
     {
-        policy.WithOrigins("http://localhost:4200", "http://localhost:51908")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials();
+              .AllowAnyMethod();
     });
 });
 
-// Register application services
 builder.Services.AddScoped<IWordService, WordService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<JwtHelper>();
 
-// Add HttpClient for external API calls
 builder.Services.AddHttpClient<IWordService, WordService>();
 builder.Services.AddHttpClient();
 
-// Add controllers
 builder.Services.AddControllers();
 
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -72,7 +71,6 @@ builder.Services.AddSwaggerGen(c =>
         Description = "A comprehensive vocabulary building application with dictionary lookup, personal collections, and quiz functionality."
     });
 
-    // Configure JWT authentication in Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Description = "JWT Authorization header using the Bearer scheme. Enter 'Bearer' [space] and then your token in the text input below.",
@@ -100,8 +98,6 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -109,22 +105,18 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-
 // app.UseHttpsRedirection();
 
-// Enable CORS
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 app.UseCors("AllowAngular");
 
-// Authentication & Authorization middleware (order matters!)
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Map controllers
 app.MapControllers();
 
-// Redirect root to Swagger UI in development
-
-app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
-
+app.MapFallbackToFile("{*path:nonfile}", "index.html");
 
 app.Run();

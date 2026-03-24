@@ -14,6 +14,33 @@ Run `ng generate component component-name` to generate a new component. You can 
 
 Run `ng build` to build the project. The build artifacts will be stored in the `dist/` directory.
 
+## Deploy To SmarterASP.NET (IIS)
+
+1. Build for production:
+
+```bash
+npm install
+npm run build
+```
+
+2. Upload everything from:
+
+```text
+dist/vocabulary-app.ui/browser
+```
+
+to your SmarterASP site root (`wwwroot`) by FTP or File Manager.
+
+3. Ensure `web.config` is included in the uploaded files. This file enables Angular client-side routing on IIS.
+
+4. Production API URL is configured as `/api` in `src/environments/environment.prod.ts`, so the UI calls the same domain API.
+
+5. If your app is deployed in a subfolder instead of site root, build with base href:
+
+```bash
+ng build --configuration production --base-href /your-subfolder/
+```
+
 ## Running unit tests
 
 Run `ng test` to execute the unit tests via [Karma](https://karma-runner.github.io).

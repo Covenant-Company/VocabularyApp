@@ -2,12 +2,13 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, map, tap } from 'rxjs';
 import { LoginRequest, LoginResponse, RegisterRequest, RegisterResponse, User } from '../models/user.model';
+import {environment} from "../../environments/environment";
 
 @Injectable({
   providedIn: 'root'
 })
 export class AuthService {
-  private readonly API_URL = 'http://localhost:5190/api/users';
+  private readonly API_URL = environment.apiUrl + '/users';
   private readonly TOKEN_KEY = 'vocab_app_token';
   private readonly USER_KEY = 'vocab_app_user';
 
