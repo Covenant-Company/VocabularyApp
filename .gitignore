@@ -479,3 +479,5 @@ jspm_packages/
 # DynamoDB Local files
 .dynamodb/
 SmarterASP.NET Password.txt
+VocabularyApp.Data/VocabularyApp.Data.csproj.lscache
+VocabularyApp.WebApi/VocabularyApp.WebApi.csproj.lscache
