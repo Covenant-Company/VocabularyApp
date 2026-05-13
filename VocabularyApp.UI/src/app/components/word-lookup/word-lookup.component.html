@@ -285,8 +285,16 @@
       <div *ngIf="!vocabularyLoading && vocabularySearchQuery.trim() && filteredVocabularyWords.length > 0"
         class="space-y-2">
         <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word.word)"
-          class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400">
+          class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400 flex items-center justify-between gap-3">
           <h3 class="text-lg font-semibold text-gray-800">{{ word.word }}</h3>
+          <button (click)="toggleFavorite(word, $event)"
+            class="w-9 h-9 rounded-full border flex items-center justify-center transition-colors duration-200"
+            [ngClass]="word.isFavorite
+              ? 'bg-yellow-100 border-yellow-300 text-yellow-600 hover:bg-yellow-200'
+              : 'bg-white border-gray-300 text-gray-400 hover:bg-gray-100'"
+            [title]="word.isFavorite ? 'Remove from favorites' : 'Add to favorites'" aria-label="Toggle favorite">
+            ★
+          </button>
         </div>
       </div>
 

@@ -244,6 +244,35 @@ namespace VocabularyApp.WebApi.Services
             }
         }
 
+        public async Task<ServiceResult<object>> SetFavoriteAsync(int userId, int userWordId, bool isFavorite)
+        {
+            try
+            {
+                var userWord = await _db.UserWords
+                    .FirstOrDefaultAsync(uw => uw.Id == userWordId && uw.UserId == userId);
+
+                if (userWord == null)
+                {
+                    return ServiceResult<object>.Failure("Word not found in your vocabulary.");
+                }
+
+                userWord.IsFavorite = isFavorite;
+                await _db.SaveChangesAsync();
+
+                return ServiceResult<object>.Success(new
+                {
+                    message = isFavorite ? "Word marked as favorite" : "Word removed from favorites",
+                    userWordId,
+                    isFavorite
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating favorite state for user {UserId}, userWord {UserWordId}", userId, userWordId);
+                return ServiceResult<object>.Failure("Failed to update favorite state.");
+            }
+        }
+
         private async Task<PartOfSpeech> ResolvePartOfSpeechAsync(string? partOfSpeech)
         {
             if (string.IsNullOrWhiteSpace(partOfSpeech))
@@ -293,6 +322,7 @@ namespace VocabularyApp.WebApi.Services
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
                         AddedAt = uw.AddedAt,
+                        IsFavorite = uw.IsFavorite,
                         PersonalNotes = uw.PersonalNotes,
                         CorrectAnswers = uw.CorrectAnswers,
                         TotalAttempts = uw.TotalAttempts
@@ -378,6 +408,7 @@ namespace VocabularyApp.WebApi.Services
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
                         AddedAt = uw.AddedAt,
+                        IsFavorite = uw.IsFavorite,
                         PersonalNotes = uw.PersonalNotes,
                         CorrectAnswers = uw.CorrectAnswers,
                         TotalAttempts = uw.TotalAttempts
