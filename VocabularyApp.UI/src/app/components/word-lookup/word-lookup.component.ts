@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Router } from '@angular/router';
-import { WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse } from '../../models/word-lookup.model';
+import { WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
 import { ToastService } from '../../services/toast.service';
 
 @Component({
@@ -399,6 +399,28 @@ export class WordLookupComponent implements OnInit {
     this.searchTerm = wordText;
     // Fetch the full word details using the lookup endpoint
     this.searchNewWord(wordText, true);
+  }
+
+  toggleFavorite(word: VocabularyItem, event: Event): void {
+    event.stopPropagation();
+
+    const newValue = !word.isFavorite;
+    const previousValue = word.isFavorite;
+    word.isFavorite = newValue;
+
+    this.apiService.put<any>(`/words/vocabulary/${word.id}/favorite`, { isFavorite: newValue }).subscribe({
+      next: () => {
+        this.toastService.success(
+          newValue ? `"${word.word}" added to favorites` : `"${word.word}" removed from favorites`
+        );
+      },
+      error: (err) => {
+        console.error('Error updating favorite state:', err);
+        word.isFavorite = previousValue;
+        const msg = err?.error?.error || err?.error?.errorMessage || 'Failed to update favorite state';
+        this.toastService.error(msg);
+      }
+    });
   }
 
   get filteredVocabularyWords() {

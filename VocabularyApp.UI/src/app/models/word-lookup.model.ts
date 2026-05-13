@@ -53,6 +53,7 @@ export interface VocabularyItem {
   pronunciation?: string;
   audioUrl?: string;
   addedAt: string;
+  isFavorite: boolean;
   personalNotes?: string;
   correctAnswers: number;
   totalAttempts: number;

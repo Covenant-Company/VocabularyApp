@@ -186,6 +186,37 @@ namespace VocabularyApp.WebApi.Controllers
         }
 
         /// <summary>
+        /// Update favorite state for a user's vocabulary entry
+        /// PUT: /api/words/vocabulary/{userWordId}/favorite
+        /// </summary>
+        [HttpPut("vocabulary/{userWordId:int}/favorite")]
+        [Authorize]
+        public async Task<IActionResult> SetFavorite(int userWordId, [FromBody] UpdateFavoriteRequestDto request)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                var result = await _wordService.SetFavoriteAsync(userId, userWordId, request.IsFavorite);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to update favorite state." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating favorite state for userWordId {UserWordId}", userWordId);
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
+
+        /// <summary>
         /// Start a new quiz session from the user's vocabulary
         /// POST: /api/words/quiz/start
         /// </summary>

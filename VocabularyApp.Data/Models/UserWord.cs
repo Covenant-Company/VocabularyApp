@@ -11,12 +11,9 @@ public class UserWord
     public int WordId { get; set; }
     [NotMapped]
     public DateTime CreatedAt { get; set; }
-    // Removed PartOfSpeechId, CustomDefinition, IsFavorite, DifficultyLevel per schema change
+
     [StringLength(500)]
     public string? PersonalNotes { get; set; } // User's personal notes about the word
-
-    // public bool IsFavorite { get; set; } = false;
-    // public int DifficultyLevel { get; set; } = 1; // 1-5 scale for spaced repetition
 
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastReviewedAt { get; set; }
@@ -36,7 +33,6 @@ public class UserWord
     [StringLength(1000)]
     public string? CustomDefinition { get; set; } // User's personalized definition (optional)
 
-    [NotMapped]
     public bool IsFavorite { get; set; } = false;
     [NotMapped]
     public int DifficultyLevel { get; set; } = 1; // 1-5 scale for spaced repetition

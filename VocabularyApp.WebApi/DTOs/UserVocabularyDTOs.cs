@@ -10,11 +10,18 @@ public class UserVocabularyItemDto
   public string? Pronunciation { get; set; }
   public string? AudioUrl { get; set; }
   public DateTime AddedAt { get; set; }
+  public bool IsFavorite { get; set; }
   public string? PersonalNotes { get; set; }
   public int CorrectAnswers { get; set; }
   public int TotalAttempts { get; set; }
   public double? AccuracyRate => TotalAttempts > 0 ? (double)CorrectAnswers / TotalAttempts * 100 : null;
 }
+
+public class UpdateFavoriteRequestDto
+{
+  public bool IsFavorite { get; set; }
+}
+
 public class UserVocabularyResponseDto
 {
   public List<UserVocabularyItemDto> Words { get; set; } = new();
