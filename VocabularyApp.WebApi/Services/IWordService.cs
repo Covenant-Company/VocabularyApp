@@ -11,8 +11,5 @@ namespace VocabularyApp.WebApi.Services
         Task<ServiceResult<object>> SetFavoriteAsync(int userId, int userWordId, bool isFavorite);
         Task<ServiceResult<UserVocabularyResponseDto>> GetUserVocabularyAsync(int userId, int page = 1, int pageSize = 20);
         Task<ServiceResult<UserVocabularyResponseDto>> SearchUserVocabularyAsync(int userId, string searchTerm, int maxResults = 5);
-        Task<ServiceResult<QuizStartResponseDto>> StartQuizAsync(int userId, StartQuizRequestDto request);
-        Task<ServiceResult<QuizSubmitResponseDto>> SubmitQuizAsync(int userId, QuizSubmitRequestDto request);
-        Task<ServiceResult<QuizHistoryResponseDto>> GetRecentQuizHistoryAsync(int userId, int take = 5);
     }
 }

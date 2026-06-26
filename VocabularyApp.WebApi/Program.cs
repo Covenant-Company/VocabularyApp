@@ -53,6 +53,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<IWordService, WordService>();
+builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<JwtHelper>();
 

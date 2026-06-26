@@ -79,7 +79,7 @@ export class QuizComponent {
     };
 
     this.isLoading = true;
-    this.apiService.post<QuizStartResponse>('/words/quiz/start', payload).subscribe({
+    this.apiService.post<QuizStartResponse>('/quiz/start', payload).subscribe({
       next: response => {
         if (response.success && response.data) {
           this.quizSession = response.data;
@@ -177,7 +177,7 @@ export class QuizComponent {
       }));
 
     this.isSubmitting = true;
-    this.apiService.post<QuizSubmitResponse>('/words/quiz/submit', {
+    this.apiService.post<QuizSubmitResponse>('/quiz/submit', {
       sessionId: this.quizSession.sessionId,
       answers
     }).subscribe({
@@ -201,7 +201,7 @@ export class QuizComponent {
     this.quizHistoryLoading = true;
     this.quizHistoryError = '';
 
-    this.apiService.get<QuizHistoryResponse>('/words/quiz/history?take=5').subscribe({
+    this.apiService.get<QuizHistoryResponse>('/quiz/history?take=5').subscribe({
       next: response => {
         if (response.success && response.data) {
           this.quizHistory = response.data.items || [];
