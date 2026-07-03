@@ -447,6 +447,11 @@ export class WordLookupComponent implements OnInit {
     ).length;
   }
 
+  getLetterTooltip(letter: string, count: number): string {
+    const wordLabel = count === 1 ? 'word starts' : 'words start';
+    return `${count} ${wordLabel} with "${letter}"`;
+  }
+
   selectVocabularyLetter(letter: string): void {
     if (!this.hasWordsForLetter(letter)) {
       return;

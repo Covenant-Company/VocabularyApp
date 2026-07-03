@@ -266,9 +266,13 @@
             [disabled]="!hasWordsForLetter(letter)" class="letter-chip"
             [class.active]="selectedVocabularyLetter === letter" [class.disabled]="!hasWordsForLetter(letter)"
             [attr.aria-pressed]="selectedVocabularyLetter === letter"
-            [attr.aria-label]="'Browse words starting with ' + letter">
+            [attr.aria-describedby]="'letter-tooltip-' + letter"
+            [attr.aria-label]="'Browse words starting with ' + letter + '. ' + getLetterTooltip(letter, getWordCountForLetter(letter))">
             <span>{{ letter }}</span>
             <span class="letter-count">{{ getWordCountForLetter(letter) }}</span>
+            <span class="letter-tooltip" [attr.id]="'letter-tooltip-' + letter" role="tooltip">
+              {{ getLetterTooltip(letter, getWordCountForLetter(letter)) }}
+            </span>
           </button>
         </div>
       </div>

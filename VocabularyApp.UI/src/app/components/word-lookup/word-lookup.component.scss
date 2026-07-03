@@ -82,6 +82,8 @@
 }
 
 .letter-chip {
+  position: relative;
+  overflow: visible;
   border: 1px solid #d1d5db;
   background: #ffffff;
   border-radius: 999px;
@@ -113,6 +115,46 @@
     opacity: 0.4;
     cursor: not-allowed;
   }
+
+  .letter-tooltip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(100% + 0.5rem);
+    transform: translateX(-50%) translateY(0.25rem);
+    background: #111827;
+    color: #f9fafb;
+    border-radius: 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.22);
+    padding: 0.38rem 0.55rem;
+    font-size: 0.74rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease;
+    z-index: 20;
+
+    &::after {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      transform: translateX(-50%);
+      border-width: 5px;
+      border-style: solid;
+      border-color: #111827 transparent transparent transparent;
+    }
+  }
+
+  &:hover .letter-tooltip,
+  &:focus-visible .letter-tooltip {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+  }
 }
 
 .letter-count {
@@ -128,5 +170,9 @@
   .letter-chip {
     min-height: 2.75rem;
     font-size: 0.9rem;
+
+    .letter-tooltip {
+      display: none;
+    }
   }
 }

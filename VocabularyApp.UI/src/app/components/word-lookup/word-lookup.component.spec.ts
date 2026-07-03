@@ -140,4 +140,10 @@ describe('WordLookupComponent', () => {
     expect(component.selectedVocabularyLetter).toBe('A');
     expect(component.hasWordsForLetter('Z')).toBeFalse();
   });
+
+  it('should format letter tooltip with correct plural grammar', () => {
+    expect(component.getLetterTooltip('A', 0)).toBe('0 words start with "A"');
+    expect(component.getLetterTooltip('G', 1)).toBe('1 word starts with "G"');
+    expect(component.getLetterTooltip('P', 2)).toBe('2 words start with "P"');
+  });
 });
