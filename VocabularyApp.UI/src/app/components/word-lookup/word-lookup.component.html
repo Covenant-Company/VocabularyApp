@@ -191,9 +191,9 @@
                   <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                     <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                   </div>
-                  <div *ngIf="definition.synonyms?.length" class="mt-2">
+                  <div *ngIf="definition.synonyms && definition.synonyms.length" class="mt-2">
                     <span class="text-sm text-gray-500">📝 Synonyms: </span>
-                    <span class="text-sm text-primary-600">{{ definition.synonyms?.join(', ') }}</span>
+                    <span class="text-sm text-primary-600">{{ definition.synonyms.join(', ') }}</span>
                   </div>
                 </div>
               </div>
@@ -226,9 +226,9 @@
                     <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                       <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                     </div>
-                    <div *ngIf="definition.synonyms?.length" class="mt-2">
+                    <div *ngIf="definition.synonyms && definition.synonyms.length" class="mt-2">
                       <span class="text-sm text-gray-500">📝 Synonyms: </span>
-                      <span class="text-sm text-primary-600">{{ definition.synonyms?.join(', ') }}</span>
+                      <span class="text-sm text-primary-600">{{ definition.synonyms.join(', ') }}</span>
                     </div>
                   </div>
                 </div>
@@ -258,18 +258,25 @@
         </div>
       </div>
 
+      <!-- Alphabetical Browse -->
+      <div class="mb-6">
+        <p class="text-sm font-medium text-gray-600 mb-3">Browse by letter</p>
+        <div class="letter-grid">
+          <button *ngFor="let letter of alphabetLetters" (click)="selectVocabularyLetter(letter)"
+            [disabled]="!hasWordsForLetter(letter)" class="letter-chip"
+            [class.active]="selectedVocabularyLetter === letter" [class.disabled]="!hasWordsForLetter(letter)"
+            [attr.aria-pressed]="selectedVocabularyLetter === letter"
+            [attr.aria-label]="'Browse words starting with ' + letter">
+            <span>{{ letter }}</span>
+            <span class="letter-count">{{ getWordCountForLetter(letter) }}</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Loading State for Vocabulary -->
       <div *ngIf="vocabularyLoading" class="text-center py-8">
         <div class="inline-block animate-spin text-2xl">⟳</div>
         <p class="text-gray-500 mt-2">Loading your vocabulary...</p>
-      </div>
-
-      <!-- Empty State when no search query -->
-      <div *ngIf="!vocabularyLoading && vocabularyResponse?.words?.length && !vocabularySearchQuery.trim()"
-        class="text-center py-12">
-        <div class="text-4xl mb-4">🔍</div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-2">Start typing to search</h3>
-        <p class="text-gray-600">Type a word to find it in your vocabulary</p>
       </div>
 
       <!-- No Results Message -->
@@ -277,13 +284,22 @@
         *ngIf="!vocabularyLoading && vocabularyResponse?.words?.length && vocabularySearchQuery.trim() && filteredVocabularyWords.length === 0"
         class="text-center py-12">
         <div class="text-4xl mb-4">🔍</div>
-        <h3 class="text-lg font-semibold text-gray-800 mb-2">No words found</h3>
-        <p class="text-gray-600">Try a different search term</p>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">No matches for your search</h3>
+        <p class="text-gray-600">Try a different word or clear search to browse by letter.</p>
+      </div>
+
+      <!-- No Results for Selected Letter -->
+      <div
+        *ngIf="!vocabularyLoading && vocabularyResponse?.words?.length && !vocabularySearchQuery.trim() && filteredVocabularyWords.length === 0"
+        class="text-center py-12">
+        <div class="text-4xl mb-4">🔠</div>
+        <h3 class="text-lg font-semibold text-gray-800 mb-2">No words for {{ selectedVocabularyLetter || 'this letter'
+          }}</h3>
+        <p class="text-gray-600">Pick another letter to browse your saved vocabulary.</p>
       </div>
 
       <!-- Vocabulary Word List - Simple list view -->
-      <div *ngIf="!vocabularyLoading && vocabularySearchQuery.trim() && filteredVocabularyWords.length > 0"
-        class="space-y-2">
+      <div *ngIf="!vocabularyLoading && filteredVocabularyWords.length > 0" class="space-y-2">
         <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word.word)"
           class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400 flex items-center justify-between gap-3">
           <h3 class="text-lg font-semibold text-gray-800">{{ word.word }}</h3>

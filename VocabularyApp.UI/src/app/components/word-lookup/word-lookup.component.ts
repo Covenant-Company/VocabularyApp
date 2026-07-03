@@ -14,6 +14,8 @@ import { ToastService } from '../../services/toast.service';
   styleUrl: './word-lookup.component.scss'
 })
 export class WordLookupComponent implements OnInit {
+  readonly alphabetLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
   searchTerm = '';
   suggestions: SearchSuggestion[] = [];
   selectedSuggestionIndex = -1;
@@ -30,6 +32,7 @@ export class WordLookupComponent implements OnInit {
   vocabularyLoading = false;
   vocabularyResponse: VocabularyResponse | null = null;
   vocabularySearchQuery = ''; // Search query for filtering vocabulary list
+  selectedVocabularyLetter: string | null = null;
   private vocabularyNeedsRefresh = false;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
@@ -364,9 +367,11 @@ export class WordLookupComponent implements OnInit {
       next: (res) => {
         if (res && res.success && res.data) {
           this.vocabularyResponse = res.data;
+          this.ensureSelectedLetterIsValid();
         } else {
           console.error('Invalid vocabulary response format:', res);
           this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
+          this.selectedVocabularyLetter = null;
         }
         this.vocabularyNeedsRefresh = false;
         this.vocabularyLoading = false;
@@ -376,6 +381,7 @@ export class WordLookupComponent implements OnInit {
         this.vocabularyLoading = false;
         // Show empty state or error message
         this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
+        this.selectedVocabularyLetter = null;
         this.vocabularyNeedsRefresh = false;
       }
     });
@@ -423,13 +429,68 @@ export class WordLookupComponent implements OnInit {
     });
   }
 
+  hasWordsForLetter(letter: string): boolean {
+    if (!this.vocabularyResponse?.words?.length) return false;
+
+    const normalizedLetter = letter.toLowerCase();
+    return this.vocabularyResponse.words.some(item =>
+      (item.word || '').trim().toLowerCase().startsWith(normalizedLetter)
+    );
+  }
+
+  getWordCountForLetter(letter: string): number {
+    if (!this.vocabularyResponse?.words?.length) return 0;
+
+    const normalizedLetter = letter.toLowerCase();
+    return this.vocabularyResponse.words.filter(item =>
+      (item.word || '').trim().toLowerCase().startsWith(normalizedLetter)
+    ).length;
+  }
+
+  selectVocabularyLetter(letter: string): void {
+    if (!this.hasWordsForLetter(letter)) {
+      return;
+    }
+
+    this.selectedVocabularyLetter = letter;
+  }
+
+  private ensureSelectedLetterIsValid(): void {
+    if (!this.vocabularyResponse?.words?.length) {
+      this.selectedVocabularyLetter = null;
+      return;
+    }
+
+    if (this.selectedVocabularyLetter && this.hasWordsForLetter(this.selectedVocabularyLetter)) {
+      return;
+    }
+
+    this.selectedVocabularyLetter = this.alphabetLetters.find(letter => this.hasWordsForLetter(letter)) ?? null;
+  }
+
   get filteredVocabularyWords() {
     if (!this.vocabularyResponse?.words) return [];
-    if (!this.vocabularySearchQuery.trim()) return []; // Return empty array when no search query
 
     const query = this.vocabularySearchQuery.toLowerCase().trim();
+
+    // Search takes precedence and matches anywhere in word/definition/example.
+    if (query) {
+      return this.vocabularyResponse.words.filter(word => {
+        const wordText = (word.word || '').toLowerCase();
+        const definitionText = (word.definition || '').toLowerCase();
+        const exampleText = (word.example || '').toLowerCase();
+
+        return wordText.includes(query) || definitionText.includes(query) || exampleText.includes(query);
+      });
+    }
+
+    if (!this.selectedVocabularyLetter) {
+      return [];
+    }
+
+    const selectedLetter = this.selectedVocabularyLetter.toLowerCase();
     return this.vocabularyResponse.words.filter(word =>
-      word.word.toLowerCase().startsWith(query) // Use startsWith to match from beginning
+      (word.word || '').toLowerCase().startsWith(selectedLetter)
     );
   }
 }

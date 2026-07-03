@@ -116,12 +116,12 @@ namespace VocabularyApp.WebApi.Controllers
         }
 
         /// <summary>
-        /// Get user's vocabulary list with pagination
-        /// GET: /api/words/vocabulary?page=1&pageSize=20
+        /// Get user's vocabulary list with pagination and optional filters
+        /// GET: /api/words/vocabulary?page=1&pageSize=20&term=abc&startsWithLetter=A
         /// </summary>
         [HttpGet("vocabulary")]
         [Authorize]
-        public async Task<IActionResult> GetUserVocabulary([FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+        public async Task<IActionResult> GetUserVocabulary([FromQuery] int page = 1, [FromQuery] int pageSize = 20, [FromQuery] string? term = null, [FromQuery] string? startsWithLetter = null)
         {
             try
             {
@@ -134,7 +134,7 @@ namespace VocabularyApp.WebApi.Controllers
                 if (page < 1) page = 1;
                 if (pageSize < 1 || pageSize > 10000) pageSize = 20; // Increased max to 10000 for vocabulary search
 
-                var result = await _wordService.GetUserVocabularyAsync(userId, page, pageSize);
+                var result = await _wordService.GetUserVocabularyAsync(userId, page, pageSize, term, startsWithLetter);
                 if (!result.IsSuccess)
                 {
                     return BadRequest(new { success = false, error = result.Message ?? "Failed to retrieve vocabulary." });

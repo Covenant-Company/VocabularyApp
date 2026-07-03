@@ -285,7 +285,7 @@ namespace VocabularyApp.WebApi.Services
             return await _db.PartsOfSpeech.FirstAsync(p => p.Name == "Noun");
         }
 
-        public async Task<ServiceResult<UserVocabularyResponseDto>> GetUserVocabularyAsync(int userId, int page = 1, int pageSize = 20)
+        public async Task<ServiceResult<UserVocabularyResponseDto>> GetUserVocabularyAsync(int userId, int page = 1, int pageSize = 20, string? searchTerm = null, string? startsWithLetter = null)
         {
             try
             {
@@ -293,8 +293,25 @@ namespace VocabularyApp.WebApi.Services
                     .Include(uw => uw.Word)
                         .ThenInclude(w => w.WordDefinitions)
                     .Include(uw => uw.PartOfSpeech)
-                    .Where(uw => uw.UserId == userId)
-                    .OrderBy(uw => uw.Word.Text);
+                    .Where(uw => uw.UserId == userId);
+
+                if (!string.IsNullOrWhiteSpace(startsWithLetter))
+                {
+                    var normalizedLetter = startsWithLetter.Trim().Substring(0, 1).ToLower();
+                    query = query.Where(uw => uw.Word.Text.ToLower().StartsWith(normalizedLetter));
+                }
+
+                if (!string.IsNullOrWhiteSpace(searchTerm))
+                {
+                    var normalizedSearchTerm = searchTerm.Trim().ToLower();
+                    query = query.Where(uw =>
+                        uw.Word.Text.ToLower().Contains(normalizedSearchTerm) ||
+                        uw.Word.WordDefinitions.Any(wd =>
+                            (!string.IsNullOrEmpty(wd.Definition) && wd.Definition.ToLower().Contains(normalizedSearchTerm)) ||
+                            (!string.IsNullOrEmpty(wd.Example) && wd.Example.ToLower().Contains(normalizedSearchTerm))));
+                }
+
+                query = query.OrderBy(uw => uw.Word.Text);
 
                 var totalCount = await query.CountAsync();
                 var items = await query
@@ -365,7 +382,11 @@ namespace VocabularyApp.WebApi.Services
                     .Include(uw => uw.Word)
                         .ThenInclude(w => w.WordDefinitions)
                     .Include(uw => uw.PartOfSpeech)
-                    .Where(uw => uw.UserId == userId && uw.Word.Text.ToLower().StartsWith(normalizedTerm))
+                    .Where(uw => uw.UserId == userId && (
+                        uw.Word.Text.ToLower().Contains(normalizedTerm) ||
+                        uw.Word.WordDefinitions.Any(wd =>
+                            (!string.IsNullOrEmpty(wd.Definition) && wd.Definition.ToLower().Contains(normalizedTerm)) ||
+                            (!string.IsNullOrEmpty(wd.Example) && wd.Example.ToLower().Contains(normalizedTerm)))))
                     .OrderBy(uw => uw.Word.Text)
                     .Take(maxResults)
                     .ToListAsync();

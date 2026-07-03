@@ -74,3 +74,59 @@
   transform: scale(1.02);
   transition: transform 0.1s ease-in-out;
 }
+
+.letter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 0.5rem;
+}
+
+.letter-chip {
+  border: 1px solid #d1d5db;
+  background: #ffffff;
+  border-radius: 999px;
+  min-height: 2.4rem;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease-in-out;
+
+  &:hover:not(:disabled) {
+    border-color: #0ea5e9;
+    color: #0f172a;
+    background: #f0f9ff;
+  }
+
+  &.active {
+    border-color: #0284c7;
+    background: #0284c7;
+    color: #ffffff;
+  }
+
+  &.disabled,
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.letter-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .letter-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .letter-chip {
+    min-height: 2.75rem;
+    font-size: 0.9rem;
+  }
+}
