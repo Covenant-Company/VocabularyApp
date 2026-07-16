@@ -321,18 +321,19 @@ namespace VocabularyApp.WebApi.Services
 
                 var vocabularyItems = items.Select(uw =>
                 {
-                    // Get the primary definition for this part of speech
-                    var definition = uw.Word.WordDefinitions
-                        .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
+                    var definitions = uw.Word.WordDefinitions
                         .OrderBy(wd => wd.DisplayOrder)
-                        .FirstOrDefault();
+                        .ToList();
+
+                    var aggregatedDefinition = BuildAggregatedDefinitionText(definitions);
+                    var example = PickFirstExample(definitions);
 
                     return new UserVocabularyItemDto
                     {
                         Id = uw.Id,
                         Word = uw.Word.Text,
-                        Definition = definition?.Definition ?? "No definition available",
-                        Example = definition?.Example,
+                        Definition = aggregatedDefinition,
+                        Example = example,
                         PartOfSpeech = uw.PartOfSpeech?.Name ?? "Unknown",
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
@@ -387,35 +388,27 @@ namespace VocabularyApp.WebApi.Services
                         uw.Word.WordDefinitions.Any(wd =>
                             (!string.IsNullOrEmpty(wd.Definition) && wd.Definition.ToLower().Contains(normalizedTerm)) ||
                             (!string.IsNullOrEmpty(wd.Example) && wd.Example.ToLower().Contains(normalizedTerm)))))
-                    .OrderBy(uw => uw.Word.Text)
+                    .OrderBy(uw => uw.Word.Text.ToLower() == normalizedTerm ? 0 : 1)
+                    .ThenBy(uw => uw.Word.Text.ToLower().StartsWith(normalizedTerm) ? 0 : 1)
+                    .ThenBy(uw => uw.Word.Text.ToLower().Contains(normalizedTerm) ? 0 : 1)
+                    .ThenBy(uw => uw.Word.WordDefinitions.Any(wd =>
+                        !string.IsNullOrEmpty(wd.Definition) && wd.Definition.ToLower().StartsWith(normalizedTerm)) ? 0 : 1)
+                    .ThenBy(uw => uw.Word.WordDefinitions.Any(wd =>
+                        !string.IsNullOrEmpty(wd.Definition) && wd.Definition.ToLower().Contains(normalizedTerm)) ? 0 : 1)
+                    .ThenBy(uw => uw.Word.WordDefinitions.Any(wd =>
+                        !string.IsNullOrEmpty(wd.Example) && wd.Example.ToLower().Contains(normalizedTerm)) ? 0 : 1)
+                    .ThenBy(uw => uw.Word.Text)
                     .Take(maxResults)
                     .ToListAsync();
 
                 var vocabularyItems = items.Select(uw =>
                 {
                     var definitions = uw.Word.WordDefinitions
-                        .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
                         .OrderBy(wd => wd.DisplayOrder)
                         .ToList();
 
-                    var definitionTexts = definitions
-                        .Select(d => d.Definition)
-                        .Where(text => !string.IsNullOrWhiteSpace(text))
-                        .ToList();
-
-                    var aggregatedDefinition = definitionTexts.Count > 0
-                        ? string.Join("; ", definitionTexts)
-                        : "No definition available";
-
-                    string? example = null;
-                    foreach (var def in definitions)
-                    {
-                        if (!string.IsNullOrWhiteSpace(def.Example))
-                        {
-                            example = def.Example;
-                            break;
-                        }
-                    }
+                    var aggregatedDefinition = BuildAggregatedDefinitionText(definitions);
+                    var example = PickFirstExample(definitions);
 
                     return new UserVocabularyItemDto
                     {
@@ -449,6 +442,32 @@ namespace VocabularyApp.WebApi.Services
                 _logger.LogError(ex, "Error searching user vocabulary for userId {UserId} with term '{SearchTerm}'", userId, searchTerm);
                 return ServiceResult<UserVocabularyResponseDto>.Failure("Failed to search vocabulary");
             }
+        }
+
+        private static string BuildAggregatedDefinitionText(IEnumerable<WordDefinition> definitions)
+        {
+            var definitionTexts = definitions
+                .Select(d => d.Definition?.Trim())
+                .Where(text => !string.IsNullOrWhiteSpace(text))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return definitionTexts.Count > 0
+                ? string.Join("; ", definitionTexts)
+                : "No definition available";
+        }
+
+        private static string? PickFirstExample(IEnumerable<WordDefinition> definitions)
+        {
+            foreach (var def in definitions)
+            {
+                if (!string.IsNullOrWhiteSpace(def.Example))
+                {
+                    return def.Example;
+                }
+            }
+
+            return null;
         }
 
         private static WordDto MapToDto(Word word)

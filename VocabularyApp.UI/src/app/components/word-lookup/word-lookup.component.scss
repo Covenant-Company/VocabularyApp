@@ -176,3 +176,11 @@
     }
   }
 }
+
+:host ::ng-deep mark.search-highlight {
+  background: #fde68a;
+  color: #7c2d12;
+  border-radius: 0.2rem;
+  padding: 0 0.1rem;
+  font-weight: 700;
+}

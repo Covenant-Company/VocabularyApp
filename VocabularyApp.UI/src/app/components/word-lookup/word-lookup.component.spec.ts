@@ -141,9 +141,35 @@ describe('WordLookupComponent', () => {
     expect(component.hasWordsForLetter('Z')).toBeFalse();
   });
 
+  it('should clear the vocabulary search when selecting a letter', () => {
+    component.vocabularyResponse = {
+      words: [
+        { id: 1, word: 'Apple', definition: 'A fruit', partOfSpeech: 'Noun', addedAt: '', isFavorite: false, correctAnswers: 0, totalAttempts: 0 }
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 1000,
+      totalPages: 1
+    };
+
+    component.vocabularySearchQuery = 'fruit';
+    component.selectVocabularyLetter('A');
+
+    expect(component.vocabularySearchQuery).toBe('');
+    expect(component.selectedVocabularyLetter).toBe('A');
+  });
+
   it('should format letter tooltip with correct plural grammar', () => {
     expect(component.getLetterTooltip('A', 0)).toBe('0 words start with "A"');
     expect(component.getLetterTooltip('G', 1)).toBe('1 word starts with "G"');
     expect(component.getLetterTooltip('P', 2)).toBe('2 words start with "P"');
+  });
+
+  it('should highlight the active vocabulary search text', () => {
+    component.vocabularySearchQuery = 'luck';
+
+    const highlighted = component.getHighlightedText('Lucky discovery');
+
+    expect(highlighted).toContain('<mark class="search-highlight">Luck</mark>');
   });
 });

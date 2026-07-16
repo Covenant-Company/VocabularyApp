@@ -402,6 +402,7 @@ export class WordLookupComponent implements OnInit {
   viewWordDetails(wordText: string): void {
     // Hide vocabulary list and show word details
     this.showVocabularyList = false;
+    this.vocabularySearchQuery = '';
     this.searchTerm = wordText;
     // Fetch the full word details using the lookup endpoint
     this.searchNewWord(wordText, true);
@@ -457,7 +458,55 @@ export class WordLookupComponent implements OnInit {
       return;
     }
 
+    this.vocabularySearchQuery = '';
     this.selectedVocabularyLetter = letter;
+  }
+
+  getHighlightedText(text: string): string {
+    const query = this.vocabularySearchQuery.trim();
+    if (!query || !text) {
+      return this.escapeHtml(text || '');
+    }
+
+    const regex = new RegExp(this.escapeRegExp(query), 'ig');
+    let highlighted = '';
+    let lastIndex = 0;
+
+    for (const match of text.matchAll(regex)) {
+      if (match.index === undefined) continue;
+
+      const start = match.index;
+      const end = start + match[0].length;
+
+      highlighted += this.escapeHtml(text.slice(lastIndex, start));
+      highlighted += `<mark class="search-highlight">${this.escapeHtml(match[0])}</mark>`;
+      lastIndex = end;
+    }
+
+    highlighted += this.escapeHtml(text.slice(lastIndex));
+    return highlighted;
+  }
+
+  getVocabularyMatchPreview(word: VocabularyItem): string | null {
+    const query = this.vocabularySearchQuery.toLowerCase().trim();
+    if (!query) return null;
+
+    const wordText = (word.word || '').toLowerCase();
+    if (wordText.includes(query)) {
+      return null;
+    }
+
+    const definitionText = word.definition || '';
+    if (definitionText.toLowerCase().includes(query)) {
+      return `Definition: ${definitionText}`;
+    }
+
+    const exampleText = word.example || '';
+    if (exampleText.toLowerCase().includes(query)) {
+      return `Example: ${exampleText}`;
+    }
+
+    return null;
   }
 
   private ensureSelectedLetterIsValid(): void {
@@ -497,5 +546,18 @@ export class WordLookupComponent implements OnInit {
     return this.vocabularyResponse.words.filter(word =>
       (word.word || '').toLowerCase().startsWith(selectedLetter)
     );
+  }
+
+  private escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  private escapeHtml(text: string): string {
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }
