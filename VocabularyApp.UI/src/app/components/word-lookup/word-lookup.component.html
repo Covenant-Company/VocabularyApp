@@ -188,7 +188,8 @@
                   {{ i + 1 }}
                 </span>
                 <div class="flex-1">
-                  <p class="text-gray-800 text-base leading-relaxed">{{ definition.definition }}</p>
+                  <p class="text-gray-800 text-base leading-relaxed"
+                    [innerHTML]="getHighlightedText(definition.definition, definitionHighlightTerm)"></p>
                   <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                     <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                   </div>
@@ -223,7 +224,8 @@
                     {{ i + 3 }}
                   </span>
                   <div class="flex-1">
-                    <p class="text-gray-800 text-base leading-relaxed">{{ definition.definition }}</p>
+                    <p class="text-gray-800 text-base leading-relaxed"
+                      [innerHTML]="getHighlightedText(definition.definition, definitionHighlightTerm)"></p>
                     <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                       <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                     </div>
@@ -308,9 +310,10 @@
         <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word.word)"
           class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400 flex items-center justify-between gap-3">
           <div class="min-w-0 flex-1">
-            <h3 class="text-lg font-semibold text-gray-800 truncate" [innerHTML]="getHighlightedText(word.word)"></h3>
-            <p *ngIf="getVocabularyMatchPreview(word) as matchPreview" class="text-xs text-gray-500 mt-1 truncate"
-              [innerHTML]="getHighlightedText(matchPreview)"></p>
+            <h3 class="text-lg font-semibold text-gray-800 truncate">{{ word.word }}</h3>
+            <p *ngIf="getVocabularyMatchPreview(word) as matchPreview" class="text-xs text-gray-500 mt-1 truncate">
+              {{ matchPreview }}
+            </p>
           </div>
           <button (click)="toggleFavorite(word, $event)"
             class="w-9 h-9 rounded-full border flex items-center justify-center transition-colors duration-200"

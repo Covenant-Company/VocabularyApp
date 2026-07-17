@@ -33,6 +33,7 @@ export class WordLookupComponent implements OnInit {
   vocabularyResponse: VocabularyResponse | null = null;
   vocabularySearchQuery = ''; // Search query for filtering vocabulary list
   selectedVocabularyLetter: string | null = null;
+  definitionHighlightTerm = '';
   private vocabularyNeedsRefresh = false;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
@@ -48,6 +49,8 @@ export class WordLookupComponent implements OnInit {
   ngOnInit(): void { }
 
   onSearchInput(): void {
+    this.definitionHighlightTerm = '';
+
     // Clear previous word definition as soon as user starts typing
     if (this.currentWord) {
       this.currentWord = null;
@@ -168,6 +171,9 @@ export class WordLookupComponent implements OnInit {
     this.currentWord = null;
     this.suggestions = []; // Clear suggestions to show error message if search fails
     this.wordAddedToVocabulary = false; // Reset flag for new word
+    if (!fromVocabularyList) {
+      this.definitionHighlightTerm = '';
+    }
     this.viewingFromVocabularyList = fromVocabularyList;
     // Use the lookup endpoint which returns full definitions
     this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word)}`).subscribe({
@@ -349,11 +355,13 @@ export class WordLookupComponent implements OnInit {
       this.errorMessage = '';
       this.searchTerm = '';
       this.vocabularySearchQuery = ''; // Clear vocabulary search
+      this.definitionHighlightTerm = '';
       this.viewingFromVocabularyList = false;
     } else {
       // Also clear when switching back to lookup view
       this.searchTerm = '';
       this.errorMessage = '';
+      this.definitionHighlightTerm = '';
       this.viewingFromVocabularyList = false;
     }
   }
@@ -400,6 +408,8 @@ export class WordLookupComponent implements OnInit {
   }
 
   viewWordDetails(wordText: string): void {
+    this.definitionHighlightTerm = this.vocabularySearchQuery.trim();
+
     // Hide vocabulary list and show word details
     this.showVocabularyList = false;
     this.vocabularySearchQuery = '';
@@ -462,8 +472,8 @@ export class WordLookupComponent implements OnInit {
     this.selectedVocabularyLetter = letter;
   }
 
-  getHighlightedText(text: string): string {
-    const query = this.vocabularySearchQuery.trim();
+  getHighlightedText(text: string, queryTerm?: string): string {
+    const query = (queryTerm ?? this.vocabularySearchQuery).trim();
     if (!query || !text) {
       return this.escapeHtml(text || '');
     }
