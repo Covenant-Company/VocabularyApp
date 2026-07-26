@@ -89,6 +89,11 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(e => e.PartOfSpeechId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne(e => e.PreferredWordDefinition)
+                .WithMany()
+                .HasForeignKey(e => e.PreferredWordDefinitionId)
+                .OnDelete(DeleteBehavior.NoAction);
+
             // Ensure unique combination - each user can only have one entry per word+part-of-speech
             entity.HasIndex(e => new { e.UserId, e.WordId, e.PartOfSpeechId }).IsUnique();
         });

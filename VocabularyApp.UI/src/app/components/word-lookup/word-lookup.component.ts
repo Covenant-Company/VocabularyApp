@@ -6,6 +6,14 @@ import { Router } from '@angular/router';
 import { WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
 import { ToastService } from '../../services/toast.service';
 
+interface DefinitionOption {
+  id: number;
+  definition: string;
+  example?: string;
+  partOfSpeech: string;
+  displayOrder?: number;
+}
+
 @Component({
   selector: 'app-word-lookup',
   standalone: true,
@@ -35,6 +43,14 @@ export class WordLookupComponent implements OnInit {
   selectedVocabularyLetter: string | null = null;
   definitionHighlightTerm = '';
   private vocabularyNeedsRefresh = false;
+
+  showDefinitionEditor = false;
+  definitionEditorLoading = false;
+  definitionEditorSaving = false;
+  definitionEditorWord: VocabularyItem | null = null;
+  definitionOptions: DefinitionOption[] = [];
+  selectedPreferredDefinitionId: number | null = null;
+  activeVocabularyWord: VocabularyItem | null = null;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
 
@@ -171,6 +187,9 @@ export class WordLookupComponent implements OnInit {
     this.currentWord = null;
     this.suggestions = []; // Clear suggestions to show error message if search fails
     this.wordAddedToVocabulary = false; // Reset flag for new word
+    if (!fromVocabularyList) {
+      this.activeVocabularyWord = null;
+    }
     if (!fromVocabularyList) {
       this.definitionHighlightTerm = '';
     }
@@ -319,7 +338,8 @@ export class WordLookupComponent implements OnInit {
       word: this.currentWord.word,
       definition: firstDef?.definition ?? '',
       partOfSpeech: this.currentWord.partOfSpeechGroups?.[0]?.partOfSpeech ?? '',
-      example: firstDef?.example ?? ''
+      example: firstDef?.example ?? '',
+      preferredWordDefinitionId: firstDef?.id ?? null
     };
 
     // Use your ApiService post helper (see next section). Endpoint path is appended to baseUrl.
@@ -357,12 +377,14 @@ export class WordLookupComponent implements OnInit {
       this.vocabularySearchQuery = ''; // Clear vocabulary search
       this.definitionHighlightTerm = '';
       this.viewingFromVocabularyList = false;
+      this.activeVocabularyWord = null;
     } else {
       // Also clear when switching back to lookup view
       this.searchTerm = '';
       this.errorMessage = '';
       this.definitionHighlightTerm = '';
       this.viewingFromVocabularyList = false;
+      this.activeVocabularyWord = null;
     }
   }
 
@@ -407,15 +429,117 @@ export class WordLookupComponent implements OnInit {
     });
   }
 
-  viewWordDetails(wordText: string): void {
+  viewWordDetails(word: VocabularyItem): void {
     this.definitionHighlightTerm = this.vocabularySearchQuery.trim();
+    this.activeVocabularyWord = word;
 
     // Hide vocabulary list and show word details
     this.showVocabularyList = false;
     this.vocabularySearchQuery = '';
-    this.searchTerm = wordText;
+    this.searchTerm = word.word;
     // Fetch the full word details using the lookup endpoint
-    this.searchNewWord(wordText, true);
+    this.searchNewWord(word.word, true);
+  }
+
+  openDefinitionEditor(word: VocabularyItem, event: Event): void {
+    event.stopPropagation();
+
+    this.definitionEditorWord = word;
+    this.definitionEditorLoading = true;
+    this.definitionEditorSaving = false;
+    this.definitionOptions = [];
+    this.selectedPreferredDefinitionId = null;
+    this.showDefinitionEditor = true;
+
+    this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word.word)}`).subscribe({
+      next: (res) => {
+        const definitions = (res as any)?.data?.word?.definitions || [];
+        const normalizedPos = (word.partOfSpeech || '').trim().toLowerCase();
+
+        this.definitionOptions = definitions
+          .filter((d: any) => ((d?.partOfSpeech || '').trim().toLowerCase() === normalizedPos) && Number.isFinite(d?.id))
+          .map((d: any) => ({
+            id: d.id,
+            definition: d.definition,
+            example: d.example,
+            partOfSpeech: d.partOfSpeech,
+            displayOrder: d.displayOrder
+          }));
+
+        this.selectedPreferredDefinitionId =
+          word.preferredWordDefinitionId ??
+          this.definitionOptions[0]?.id ??
+          null;
+
+        if (this.definitionOptions.length === 0) {
+          this.toastService.error('No definitions were found for this part of speech.');
+          this.closeDefinitionEditor();
+        }
+
+        this.definitionEditorLoading = false;
+      },
+      error: (err) => {
+        console.error('Failed to load definitions for editor:', err);
+        this.definitionEditorLoading = false;
+        this.toastService.error('Failed to load definitions for this word.');
+        this.closeDefinitionEditor();
+      }
+    });
+  }
+
+  closeDefinitionEditor(): void {
+    this.showDefinitionEditor = false;
+    this.definitionEditorLoading = false;
+    this.definitionEditorSaving = false;
+    this.definitionEditorWord = null;
+    this.definitionOptions = [];
+    this.selectedPreferredDefinitionId = null;
+  }
+
+  savePreferredDefinition(): void {
+    if (!this.definitionEditorWord || !this.selectedPreferredDefinitionId || this.definitionEditorSaving) {
+      return;
+    }
+
+    const userWordId = this.definitionEditorWord.id;
+    const definitionId = this.selectedPreferredDefinitionId;
+    const selectedDefinition = this.definitionOptions.find(option => option.id === definitionId);
+
+    this.definitionEditorSaving = true;
+    this.apiService.put<any>(`/words/vocabulary/${userWordId}/preferred-definition`, {
+      preferredWordDefinitionId: definitionId
+    }).subscribe({
+      next: () => {
+        if (this.vocabularyResponse?.words) {
+          const target = this.vocabularyResponse.words.find(item => item.id === userWordId);
+          if (target) {
+            target.preferredWordDefinitionId = definitionId;
+            if (selectedDefinition) {
+              target.definition = selectedDefinition.definition;
+              target.example = selectedDefinition.example;
+            }
+          }
+        }
+
+        if (this.activeVocabularyWord && this.activeVocabularyWord.id === userWordId) {
+          this.activeVocabularyWord.preferredWordDefinitionId = definitionId;
+        }
+
+        if (this.definitionEditorWord) {
+          this.definitionEditorWord.preferredWordDefinitionId = definitionId;
+        }
+
+        this.toastService.success('Preferred quiz definition saved.');
+        this.definitionEditorSaving = false;
+        this.closeDefinitionEditor();
+      },
+      error: (err) => {
+        console.error('Error saving preferred definition:', err);
+        this.definitionEditorSaving = false;
+        const msg = err?.error?.error || err?.error?.errorMessage || 'Failed to save preferred definition';
+        this.toastService.error(msg);
+      }
+    });
   }
 
   toggleFavorite(word: VocabularyItem, event: Event): void {
@@ -517,6 +641,14 @@ export class WordLookupComponent implements OnInit {
     }
 
     return null;
+  }
+
+  isCurrentPreferredDefinition(definitionId?: number): boolean {
+    if (!definitionId || !this.activeVocabularyWord?.preferredWordDefinitionId) {
+      return false;
+    }
+
+    return this.activeVocabularyWord.preferredWordDefinitionId === definitionId;
   }
 
   private ensureSelectedLetterIsValid(): void {

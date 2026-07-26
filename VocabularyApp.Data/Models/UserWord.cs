@@ -28,6 +28,7 @@ public class UserWord
     // Removed PartOfSpeech navigation
 
     public int PartOfSpeechId { get; set; }
+    public int? PreferredWordDefinitionId { get; set; }
 
     [NotMapped]
     [StringLength(1000)]
@@ -38,5 +39,6 @@ public class UserWord
     public int DifficultyLevel { get; set; } = 1; // 1-5 scale for spaced repetition
 
     public virtual PartOfSpeech PartOfSpeech { get; set; } = null!;
+    public virtual WordDefinition? PreferredWordDefinition { get; set; }
     public virtual ICollection<SampleSentence> SampleSentences { get; set; } = new List<SampleSentence>();
 }

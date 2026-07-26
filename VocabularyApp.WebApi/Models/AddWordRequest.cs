@@ -7,5 +7,6 @@ namespace VocabularyApp.WebApi.Models
     public string? Example { get; set; }
     public string? PartOfSpeech { get; set; }
     public string? Pronunciation { get; set; }
+    public int? PreferredWordDefinitionId { get; set; }
   }
 }

@@ -5,6 +5,7 @@ public class UserVocabularyItemDto
   public int Id { get; set; }
   public string Word { get; set; } = string.Empty;
   public string Definition { get; set; } = string.Empty;
+  public int? PreferredWordDefinitionId { get; set; }
   public string? Example { get; set; }
   public string PartOfSpeech { get; set; } = string.Empty;
   public string? Pronunciation { get; set; }
@@ -20,6 +21,11 @@ public class UserVocabularyItemDto
 public class UpdateFavoriteRequestDto
 {
   public bool IsFavorite { get; set; }
+}
+
+public class UpdatePreferredDefinitionRequestDto
+{
+  public int PreferredWordDefinitionId { get; set; }
 }
 
 public class UserVocabularyResponseDto

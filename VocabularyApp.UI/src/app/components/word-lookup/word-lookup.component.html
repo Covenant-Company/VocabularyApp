@@ -124,6 +124,15 @@
                 title="Play pronunciation">
                 🔊 Play
               </button>
+              <button *ngIf="activeVocabularyWord" (click)="openDefinitionEditor(activeVocabularyWord, $event)"
+                class="px-3 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-medium transition-colors duration-200"
+                title="Choose quiz definition">
+                ✎ Edit Quiz Definition
+              </button>
+              <span *ngIf="activeVocabularyWord?.preferredWordDefinitionId"
+                class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
+                Saved definition selected
+              </span>
             </div>
             <p *ngIf="currentWord.phonetic" class="text-lg text-gray-500">{{ currentWord.phonetic }}</p>
           </div>
@@ -190,6 +199,12 @@
                 <div class="flex-1">
                   <p class="text-gray-800 text-base leading-relaxed"
                     [innerHTML]="getHighlightedText(definition.definition, definitionHighlightTerm)"></p>
+                  <div *ngIf="isCurrentPreferredDefinition(definition.id)" class="mt-2">
+                    <span
+                      class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+                      ✅ Selected for Quiz
+                    </span>
+                  </div>
                   <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                     <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                   </div>
@@ -226,6 +241,12 @@
                   <div class="flex-1">
                     <p class="text-gray-800 text-base leading-relaxed"
                       [innerHTML]="getHighlightedText(definition.definition, definitionHighlightTerm)"></p>
+                    <div *ngIf="isCurrentPreferredDefinition(definition.id)" class="mt-2">
+                      <span
+                        class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700">
+                        ✅ Selected for Quiz
+                      </span>
+                    </div>
                     <div *ngIf="definition.example" class="mt-2 p-3 bg-gray-50 rounded-lg">
                       <p class="text-gray-600 italic">💭 "{{ definition.example }}"</p>
                     </div>
@@ -307,7 +328,7 @@
 
       <!-- Vocabulary Word List - Simple list view -->
       <div *ngIf="!vocabularyLoading && filteredVocabularyWords.length > 0" class="space-y-2">
-        <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word.word)"
+        <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word)"
           class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400 flex items-center justify-between gap-3">
           <div class="min-w-0 flex-1">
             <h3 class="text-lg font-semibold text-gray-800 truncate">{{ word.word }}</h3>
@@ -363,6 +384,59 @@
       <h3 class="text-xl font-semibold text-gray-800 mb-2">Ready to explore words?</h3>
       <p class="text-gray-600">Search for a word above to see its definitions, examples, and add it to your vocabulary.
       </p>
+    </div>
+
+    <!-- Preferred Definition Editor -->
+    <div *ngIf="showDefinitionEditor" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+      (click)="closeDefinitionEditor()">
+      <div class="w-full max-w-2xl bg-white rounded-2xl shadow-2xl p-6" (click)="$event.stopPropagation()">
+        <div class="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h3 class="text-xl font-bold text-gray-800">Choose Quiz Definition</h3>
+            <p class="text-sm text-gray-600 mt-1">
+              {{ definitionEditorWord?.word }} ({{ definitionEditorWord?.partOfSpeech }})
+            </p>
+          </div>
+          <button (click)="closeDefinitionEditor()" class="text-gray-500 hover:text-gray-700 text-xl"
+            aria-label="Close">×</button>
+        </div>
+
+        <div *ngIf="definitionEditorLoading" class="py-10 text-center text-gray-600">
+          Loading definitions...
+        </div>
+
+        <div *ngIf="!definitionEditorLoading" class="space-y-3 max-h-80 overflow-y-auto pr-1">
+          <label *ngFor="let option of definitionOptions"
+            class="block border border-gray-200 rounded-lg p-3 hover:border-indigo-300 cursor-pointer">
+            <div class="flex items-start gap-3">
+              <input type="radio" name="preferredDefinition" [value]="option.id"
+                [(ngModel)]="selectedPreferredDefinitionId" class="mt-1" />
+              <div class="min-w-0">
+                <p class="text-gray-800">{{ option.definition }}</p>
+                <div *ngIf="definitionEditorWord?.preferredWordDefinitionId === option.id" class="mt-1">
+                  <span
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                    Current saved
+                  </span>
+                </div>
+                <p *ngIf="option.example" class="text-sm text-gray-600 mt-1 italic">"{{ option.example }}"</p>
+              </div>
+            </div>
+          </label>
+        </div>
+
+        <div class="mt-6 flex justify-end gap-2">
+          <button (click)="closeDefinitionEditor()"
+            class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100">
+            Cancel
+          </button>
+          <button (click)="savePreferredDefinition()"
+            [disabled]="!selectedPreferredDefinitionId || definitionEditorSaving"
+            class="px-4 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-indigo-300">
+            {{ definitionEditorSaving ? 'Saving...' : 'Save Definition' }}
+          </button>
+        </div>
+      </div>
     </div>
 
   </div>

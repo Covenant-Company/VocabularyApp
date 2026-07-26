@@ -48,6 +48,7 @@ export interface VocabularyItem {
   id: number;
   word: string;
   definition: string;
+  preferredWordDefinitionId?: number;
   example?: string;
   partOfSpeech: string;
   pronunciation?: string;

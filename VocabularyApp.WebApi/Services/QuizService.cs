@@ -36,10 +36,14 @@ namespace VocabularyApp.WebApi.Services
               WordId = uw.WordId,
               Word = uw.Word.Text,
               Definition = uw.Word.WordDefinitions
-                    .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
-                    .OrderBy(wd => wd.DisplayOrder)
-                    .Select(wd => wd.Definition)
-                    .FirstOrDefault()
+              .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId && uw.PreferredWordDefinitionId.HasValue && wd.Id == uw.PreferredWordDefinitionId.Value)
+              .Select(wd => wd.Definition)
+              .FirstOrDefault()
+              ?? uw.Word.WordDefinitions
+                .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
+                .OrderBy(wd => wd.DisplayOrder)
+                .Select(wd => wd.Definition)
+                .FirstOrDefault()
             })
             .ToListAsync();
 

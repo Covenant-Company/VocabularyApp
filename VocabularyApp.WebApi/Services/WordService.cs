@@ -223,6 +223,7 @@ namespace VocabularyApp.WebApi.Services
                     UserId = userId,
                     WordId = word.Id,
                     PartOfSpeechId = pos.Id,
+                    PreferredWordDefinitionId = await ResolvePreferredDefinitionIdAsync(word.Id, pos.Id, request.PreferredWordDefinitionId),
                     // CreatedAt, CustomDefinition, IsFavorite, DifficultyLevel are not mapped in DB currently
                     // Use AddedAt (mapped) for timestamp
                     AddedAt = DateTime.UtcNow,
@@ -239,6 +240,51 @@ namespace VocabularyApp.WebApi.Services
             {
                 _logger.LogError(ex, "Error adding word to vocabulary for user {UserId}: '{Word}'", userId, request.Word);
                 return ServiceResult<object>.Failure("Failed to add to vocabulary");
+            }
+        }
+
+        public async Task<ServiceResult<object>> SetPreferredDefinitionAsync(int userId, int userWordId, int preferredWordDefinitionId)
+        {
+            try
+            {
+                if (preferredWordDefinitionId <= 0)
+                {
+                    return ServiceResult<object>.Failure("A valid preferred definition is required.");
+                }
+
+                var userWord = await _db.UserWords
+                    .FirstOrDefaultAsync(uw => uw.Id == userWordId && uw.UserId == userId);
+
+                if (userWord == null)
+                {
+                    return ServiceResult<object>.Failure("Word not found in your vocabulary.");
+                }
+
+                var definitionExists = await _db.WordDefinitions
+                    .AnyAsync(wd =>
+                        wd.Id == preferredWordDefinitionId &&
+                        wd.WordId == userWord.WordId &&
+                        wd.PartOfSpeechId == userWord.PartOfSpeechId);
+
+                if (!definitionExists)
+                {
+                    return ServiceResult<object>.Failure("Selected definition is not valid for this word.");
+                }
+
+                userWord.PreferredWordDefinitionId = preferredWordDefinitionId;
+                await _db.SaveChangesAsync();
+
+                return ServiceResult<object>.Success(new
+                {
+                    message = "Preferred definition updated",
+                    userWordId,
+                    preferredWordDefinitionId
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating preferred definition for user {UserId}, userWord {UserWordId}", userId, userWordId);
+                return ServiceResult<object>.Failure("Failed to update preferred definition.");
             }
         }
 
@@ -322,18 +368,18 @@ namespace VocabularyApp.WebApi.Services
                 var vocabularyItems = items.Select(uw =>
                 {
                     var definitions = uw.Word.WordDefinitions
+                        .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
                         .OrderBy(wd => wd.DisplayOrder)
                         .ToList();
-
-                    var aggregatedDefinition = BuildAggregatedDefinitionText(definitions);
-                    var example = PickFirstExample(definitions);
+                    var preferredDefinition = SelectPreferredDefinition(uw, definitions);
 
                     return new UserVocabularyItemDto
                     {
                         Id = uw.Id,
                         Word = uw.Word.Text,
-                        Definition = aggregatedDefinition,
-                        Example = example,
+                        Definition = preferredDefinition?.Definition ?? BuildAggregatedDefinitionText(definitions),
+                        PreferredWordDefinitionId = preferredDefinition?.Id,
+                        Example = preferredDefinition?.Example ?? PickFirstExample(definitions),
                         PartOfSpeech = uw.PartOfSpeech?.Name ?? "Unknown",
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
@@ -404,18 +450,18 @@ namespace VocabularyApp.WebApi.Services
                 var vocabularyItems = items.Select(uw =>
                 {
                     var definitions = uw.Word.WordDefinitions
+                        .Where(wd => wd.PartOfSpeechId == uw.PartOfSpeechId)
                         .OrderBy(wd => wd.DisplayOrder)
                         .ToList();
-
-                    var aggregatedDefinition = BuildAggregatedDefinitionText(definitions);
-                    var example = PickFirstExample(definitions);
+                    var preferredDefinition = SelectPreferredDefinition(uw, definitions);
 
                     return new UserVocabularyItemDto
                     {
                         Id = uw.Id,
                         Word = uw.Word.Text,
-                        Definition = aggregatedDefinition,
-                        Example = example,
+                        Definition = preferredDefinition?.Definition ?? BuildAggregatedDefinitionText(definitions),
+                        PreferredWordDefinitionId = preferredDefinition?.Id,
+                        Example = preferredDefinition?.Example ?? PickFirstExample(definitions),
                         PartOfSpeech = uw.PartOfSpeech?.Name ?? "Unknown",
                         Pronunciation = uw.Word.Pronunciation,
                         AudioUrl = uw.Word.AudioUrl,
@@ -468,6 +514,49 @@ namespace VocabularyApp.WebApi.Services
             }
 
             return null;
+        }
+
+        private static WordDefinition? SelectPreferredDefinition(UserWord userWord, IReadOnlyCollection<WordDefinition> definitions)
+        {
+            if (definitions.Count == 0)
+            {
+                return null;
+            }
+
+            if (userWord.PreferredWordDefinitionId.HasValue)
+            {
+                var explicitPreferred = definitions.FirstOrDefault(d => d.Id == userWord.PreferredWordDefinitionId.Value);
+                if (explicitPreferred != null)
+                {
+                    return explicitPreferred;
+                }
+            }
+
+            return definitions.OrderBy(d => d.DisplayOrder).FirstOrDefault();
+        }
+
+        private async Task<int?> ResolvePreferredDefinitionIdAsync(int wordId, int partOfSpeechId, int? preferredWordDefinitionId)
+        {
+            if (preferredWordDefinitionId.HasValue)
+            {
+                var requestedDefinitionId = preferredWordDefinitionId.Value;
+                var isValid = await _db.WordDefinitions
+                    .AnyAsync(wd =>
+                        wd.Id == requestedDefinitionId &&
+                        wd.WordId == wordId &&
+                        wd.PartOfSpeechId == partOfSpeechId);
+
+                if (isValid)
+                {
+                    return requestedDefinitionId;
+                }
+            }
+
+            return await _db.WordDefinitions
+                .Where(wd => wd.WordId == wordId && wd.PartOfSpeechId == partOfSpeechId)
+                .OrderBy(wd => wd.DisplayOrder)
+                .Select(wd => (int?)wd.Id)
+                .FirstOrDefaultAsync();
         }
 
         private static WordDto MapToDto(Word word)

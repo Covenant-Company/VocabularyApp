@@ -216,5 +216,41 @@ namespace VocabularyApp.WebApi.Controllers
             }
         }
 
+        /// <summary>
+        /// Update preferred definition for a user's vocabulary entry
+        /// PUT: /api/words/vocabulary/{userWordId}/preferred-definition
+        /// </summary>
+        [HttpPut("vocabulary/{userWordId:int}/preferred-definition")]
+        [Authorize]
+        public async Task<IActionResult> SetPreferredDefinition(int userWordId, [FromBody] UpdatePreferredDefinitionRequestDto request)
+        {
+            try
+            {
+                var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
+                {
+                    return Unauthorized(new { success = false, error = "Invalid token" });
+                }
+
+                if (request == null || request.PreferredWordDefinitionId <= 0)
+                {
+                    return BadRequest(new { success = false, error = "Preferred definition is required." });
+                }
+
+                var result = await _wordService.SetPreferredDefinitionAsync(userId, userWordId, request.PreferredWordDefinitionId);
+                if (!result.IsSuccess)
+                {
+                    return BadRequest(new { success = false, error = result.Message ?? "Failed to update preferred definition." });
+                }
+
+                return Ok(new { success = true, data = result.Data });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating preferred definition for userWordId {UserWordId}", userWordId);
+                return StatusCode(500, new { success = false, error = "Internal server error" });
+            }
+        }
+
     }
 }
