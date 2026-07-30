@@ -127,12 +127,12 @@
               <button *ngIf="activeVocabularyWord" (click)="openDefinitionEditor(activeVocabularyWord, $event)"
                 class="px-3 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-medium transition-colors duration-200"
                 title="Choose quiz definition">
-                ✎ Edit Quiz Definition
+                ✎ Pick Quiz Definition
               </button>
-              <span *ngIf="activeVocabularyWord?.preferredWordDefinitionId"
+              <!-- <span *ngIf="activeVocabularyWord?.preferredWordDefinitionId"
                 class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-700">
                 Saved definition selected
-              </span>
+              </span> -->
             </div>
             <p *ngIf="currentWord.phonetic" class="text-lg text-gray-500">{{ currentWord.phonetic }}</p>
           </div>
