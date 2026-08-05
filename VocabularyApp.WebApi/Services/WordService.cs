@@ -260,15 +260,39 @@ namespace VocabularyApp.WebApi.Services
                     return ServiceResult<object>.Failure("Word not found in your vocabulary.");
                 }
 
-                var definitionExists = await _db.WordDefinitions
-                    .AnyAsync(wd =>
+                var selectedDefinition = await _db.WordDefinitions
+                    .Where(wd =>
                         wd.Id == preferredWordDefinitionId &&
-                        wd.WordId == userWord.WordId &&
-                        wd.PartOfSpeechId == userWord.PartOfSpeechId);
+                        wd.WordId == userWord.WordId)
+                    .Select(wd => new
+                    {
+                        wd.Id,
+                        wd.PartOfSpeechId
+                    })
+                    .FirstOrDefaultAsync();
 
-                if (!definitionExists)
+                if (selectedDefinition == null)
                 {
                     return ServiceResult<object>.Failure("Selected definition is not valid for this word.");
+                }
+
+                if (userWord.PartOfSpeechId != selectedDefinition.PartOfSpeechId)
+                {
+                    // Move this vocabulary entry to the selected definition's part of speech.
+                    // This keeps the quiz data consistent with the chosen preferred definition.
+                    var conflictingEntryExists = await _db.UserWords
+                        .AnyAsync(uw =>
+                            uw.UserId == userId &&
+                            uw.WordId == userWord.WordId &&
+                            uw.PartOfSpeechId == selectedDefinition.PartOfSpeechId &&
+                            uw.Id != userWord.Id);
+
+                    if (conflictingEntryExists)
+                    {
+                        return ServiceResult<object>.Failure("You already have this word saved for that part of speech. Please edit that entry instead.");
+                    }
+
+                    userWord.PartOfSpeechId = selectedDefinition.PartOfSpeechId;
                 }
 
                 userWord.PreferredWordDefinitionId = preferredWordDefinitionId;

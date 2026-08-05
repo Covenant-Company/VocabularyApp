@@ -86,6 +86,21 @@ describe('WordLookupComponent', () => {
     expect(component.filteredVocabularyWords.map(x => x.word)).toEqual(['Serendipity']);
   });
 
+  it('should include definitions from all parts of speech in the quiz-definition picker', () => {
+    const options = component.buildDefinitionOptions([
+      { id: 1, definition: 'A noun definition', partOfSpeech: 'noun' },
+      { id: 2, definition: 'An adjective definition', partOfSpeech: 'adjective' },
+      { id: 3, definition: 'A verb definition', partOfSpeech: 'verb' }
+    ]);
+
+    expect(options.map((option: { definition: string }) => option.definition)).toEqual([
+      'A noun definition',
+      'An adjective definition',
+      'A verb definition'
+    ]);
+    expect(options.some((option: { partOfSpeech: string }) => option.partOfSpeech === 'adjective')).toBeTrue();
+  });
+
   it('should use contains search across word, definition, and example (case-insensitive)', () => {
     component.vocabularyResponse = {
       words: [

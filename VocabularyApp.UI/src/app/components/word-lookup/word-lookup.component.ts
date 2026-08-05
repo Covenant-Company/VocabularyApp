@@ -51,6 +51,7 @@ export class WordLookupComponent implements OnInit {
   definitionOptions: DefinitionOption[] = [];
   selectedPreferredDefinitionId: number | null = null;
   activeVocabularyWord: VocabularyItem | null = null;
+  private pronunciationAudio: HTMLAudioElement | null = null;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
 
@@ -418,15 +419,67 @@ export class WordLookupComponent implements OnInit {
   }
 
   playAudio(audioUrl: string): void {
-    if (!audioUrl) {
-      console.warn('No audio URL available');
+    const normalizedAudioUrl = this.normalizeAudioUrl(audioUrl);
+    if (!normalizedAudioUrl) {
+      this.playSpeechSynthesisFallback();
       return;
     }
 
-    const audio = new Audio(audioUrl);
-    audio.play().catch(error => {
-      console.error('Failed to play audio:', error);
-    });
+    try {
+      if (this.pronunciationAudio) {
+        this.pronunciationAudio.pause();
+        this.pronunciationAudio.currentTime = 0;
+      }
+
+      this.pronunciationAudio = new Audio(normalizedAudioUrl);
+      this.pronunciationAudio.preload = 'auto';
+
+      this.pronunciationAudio.play().catch(error => {
+        console.error('Failed to play pronunciation audio:', error);
+        this.playSpeechSynthesisFallback();
+      });
+    } catch (error) {
+      console.error('Audio setup failed:', error);
+      this.playSpeechSynthesisFallback();
+    }
+  }
+
+  private normalizeAudioUrl(audioUrl?: string | null): string | null {
+    if (!audioUrl || !audioUrl.trim()) {
+      return null;
+    }
+
+    const trimmed = audioUrl.trim();
+
+    // Dictionary API data can contain protocol-relative or insecure HTTP audio links.
+    if (trimmed.startsWith('//')) {
+      return `https:${trimmed}`;
+    }
+
+    if (trimmed.startsWith('http://')) {
+      return `https://${trimmed.substring('http://'.length)}`;
+    }
+
+    return trimmed;
+  }
+
+  private playSpeechSynthesisFallback(): void {
+    const text = this.currentWord?.word?.trim();
+    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
+
+    if (!text || !synth) {
+      return;
+    }
+
+    try {
+      synth.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.95;
+      synth.speak(utterance);
+    } catch (error) {
+      console.error('Speech synthesis fallback failed:', error);
+    }
   }
 
   viewWordDetails(word: VocabularyItem): void {
@@ -439,6 +492,37 @@ export class WordLookupComponent implements OnInit {
     this.searchTerm = word.word;
     // Fetch the full word details using the lookup endpoint
     this.searchNewWord(word.word, true);
+  }
+
+  buildDefinitionOptions(definitions: any[]): DefinitionOption[] {
+    const mappedDefinitions = (definitions || [])
+      .filter((d: any) => Number.isFinite(d?.id))
+      .map((d: any) => ({
+        id: d.id,
+        definition: d.definition,
+        example: d.example,
+        partOfSpeech: d.partOfSpeech,
+        displayOrder: d.displayOrder
+      }));
+
+    return mappedDefinitions.sort((a, b) => {
+      const orderA = a.displayOrder;
+      const orderB = b.displayOrder;
+
+      if (orderA !== undefined && orderB !== undefined && orderA !== orderB) {
+        return orderA - orderB;
+      }
+
+      if (orderA !== undefined && orderB === undefined) {
+        return -1;
+      }
+
+      if (orderA === undefined && orderB !== undefined) {
+        return 1;
+      }
+
+      return 0;
+    });
   }
 
   openDefinitionEditor(word: VocabularyItem, event: Event): void {
@@ -454,17 +538,8 @@ export class WordLookupComponent implements OnInit {
     this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word.word)}`).subscribe({
       next: (res) => {
         const definitions = (res as any)?.data?.word?.definitions || [];
-        const normalizedPos = (word.partOfSpeech || '').trim().toLowerCase();
 
-        this.definitionOptions = definitions
-          .filter((d: any) => ((d?.partOfSpeech || '').trim().toLowerCase() === normalizedPos) && Number.isFinite(d?.id))
-          .map((d: any) => ({
-            id: d.id,
-            definition: d.definition,
-            example: d.example,
-            partOfSpeech: d.partOfSpeech,
-            displayOrder: d.displayOrder
-          }));
+        this.definitionOptions = this.buildDefinitionOptions(definitions);
 
         this.selectedPreferredDefinitionId =
           word.preferredWordDefinitionId ??
@@ -472,7 +547,7 @@ export class WordLookupComponent implements OnInit {
           null;
 
         if (this.definitionOptions.length === 0) {
-          this.toastService.error('No definitions were found for this part of speech.');
+          this.toastService.error('No definitions were found for this word.');
           this.closeDefinitionEditor();
         }
 
