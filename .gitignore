@@ -632,3 +632,11 @@ VocabularyApp.WebApi/publish_clean1/publish_clean/Archive/publish_clean/publish-
 VocabularyApp.WebApi/publish_clean1/publish_clean/Archive/publish_clean/publish-clean/publish-check-now/VocabularyApp.WebApi.runtimeconfig.json
 VocabularyApp.WebApi/publish_clean1/publish_clean/Archive/publish_clean/publish-clean/publish-check-now/VocabularyApp.WebApi.staticwebassets.endpoints.json
 VocabularyApp.WebApi/publish_clean1/publish_clean/Archive/publish_clean/publish-clean/publish-check-now/web.config
+VocabularyApp.WebApi/publish_clean2/appsettings.Development.json
+VocabularyApp.WebApi/publish_clean2/appsettings.json
+VocabularyApp.WebApi/publish_clean2/createdump.exe
+VocabularyApp.WebApi/publish_clean2/VocabularyApp.WebApi.deps.json
+VocabularyApp.WebApi/publish_clean2/VocabularyApp.WebApi.exe
+VocabularyApp.WebApi/publish_clean2/VocabularyApp.WebApi.runtimeconfig.json
+VocabularyApp.WebApi/publish_clean2/VocabularyApp.WebApi.staticwebassets.endpoints.json
+VocabularyApp.WebApi/publish_clean2/web.config
