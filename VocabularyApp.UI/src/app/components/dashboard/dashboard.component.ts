@@ -28,7 +28,7 @@ export class DashboardComponent implements OnInit {
       title: 'Learning Analytics',
       description: 'Track your progress and learning statistics',
       icon: '📊',
-      isActive: false,
+      isActive: true,
       route: '/analytics'
     },
     {

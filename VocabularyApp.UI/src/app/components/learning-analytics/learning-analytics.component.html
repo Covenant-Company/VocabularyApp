@@ -1,0 +1,86 @@
+<div class="min-h-screen bg-gradient-to-br from-primary-500 to-secondary-500 p-6">
+  <div class="max-w-6xl mx-auto">
+    <div class="flex items-center justify-between mb-8">
+      <div>
+        <h1 class="text-3xl font-bold text-white mb-2">Learning Analytics</h1>
+        <p class="text-white/80">Track your quiz score trend over time</p>
+      </div>
+      <button (click)="backToDashboard()" class="px-4 py-2 bg-white/20 hover:bg-white/30 text-white rounded-lg">
+        ← Back to Dashboard
+      </button>
+    </div>
+
+    <div class="bg-white rounded-2xl shadow-xl p-6 md:p-8">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <h2 class="text-2xl font-bold text-gray-800">Score Trend</h2>
+
+        <div class="inline-flex rounded-lg border border-gray-200 p-1 bg-gray-50">
+          <button *ngFor="let window of windows" (click)="setWindow(window.key)"
+            class="px-3 py-1.5 rounded-md text-sm font-medium transition-colors"
+            [ngClass]="selectedWindow === window.key ? 'bg-primary-600 text-white' : 'text-gray-700 hover:bg-white'">
+            {{ window.label }}
+          </button>
+        </div>
+      </div>
+
+      <div *ngIf="isLoading" class="py-16 text-center text-gray-600">
+        Loading analytics...
+      </div>
+
+      <div *ngIf="!isLoading && errorMessage" class="mb-6 p-3 bg-red-50 border border-red-200 rounded-lg">
+        <p class="text-red-700 text-sm">{{ errorMessage }}</p>
+      </div>
+
+      <div *ngIf="!isLoading && !errorMessage && !hasData" class="py-16 text-center text-gray-500">
+        No quiz data yet. Complete a few quizzes to see your score trend.
+      </div>
+
+      <div *ngIf="!isLoading && !errorMessage && hasData" class="space-y-6">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div class="rounded-xl border border-gray-200 p-4">
+            <p class="text-sm text-gray-500">Average Score</p>
+            <p class="text-2xl font-bold text-gray-800">{{ averageScore }}%</p>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 p-4">
+            <p class="text-sm text-gray-500">Best Score</p>
+            <p class="text-2xl font-bold text-gray-800">{{ bestScore }}%</p>
+          </div>
+
+          <div class="rounded-xl border border-gray-200 p-4">
+            <p class="text-sm text-gray-500">Latest Score</p>
+            <p class="text-2xl font-bold text-gray-800">{{ latestScore }}%</p>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-gray-200 p-4 md:p-5">
+          <svg [attr.viewBox]="'0 0 ' + chartWidth + ' ' + chartHeight" class="w-full h-[320px]" role="img"
+            aria-label="Score trend chart">
+            <g>
+              <line x1="38" y1="20" x2="38" y2="276" stroke="#d1d5db" stroke-width="1"></line>
+              <line x1="38" y1="276" x2="876" y2="276" stroke="#d1d5db" stroke-width="1"></line>
+
+              <g *ngFor="let level of gridLevels">
+                <line x1="38" [attr.y1]="getPointY(level)" x2="876" [attr.y2]="getPointY(level)" stroke="#e5e7eb"
+                  stroke-width="1" stroke-dasharray="4 4"></line>
+                <text x="8" [attr.y]="getPointY(level) + 4" font-size="12" fill="#6b7280">{{ level }}%</text>
+              </g>
+
+              <polyline [attr.points]="chartPathPoints" fill="none" stroke="#2563eb" stroke-width="3"
+                stroke-linecap="round" stroke-linejoin="round"></polyline>
+
+              <g *ngFor="let point of trendPoints; let i = index">
+                <circle [attr.cx]="getPointX(i)" [attr.cy]="getPointY(point.score)" r="4" fill="#1d4ed8">
+                  <title>{{ formatTooltip(point) }}</title>
+                </circle>
+              </g>
+
+              <text x="38" y="308" font-size="12" fill="#6b7280">{{ firstLabel }}</text>
+              <text x="876" y="308" font-size="12" text-anchor="end" fill="#6b7280">{{ lastLabel }}</text>
+            </g>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

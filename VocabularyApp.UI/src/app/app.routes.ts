@@ -4,6 +4,7 @@ import { SignupComponent } from './components/signup/signup.component';
 import { DashboardComponent } from './components/dashboard/dashboard.component';
 import { WordLookupComponent } from './components/word-lookup/word-lookup.component';
 import { QuizComponent } from './components/quiz/quiz.component';
+import { LearningAnalyticsComponent } from './components/learning-analytics/learning-analytics.component';
 import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
@@ -13,5 +14,6 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'vocabulary', component: WordLookupComponent, canActivate: [authGuard] },
   { path: 'quiz', component: QuizComponent, canActivate: [authGuard] },
+  { path: 'analytics', component: LearningAnalyticsComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: '/login' }
 ];

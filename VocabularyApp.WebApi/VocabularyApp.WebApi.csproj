@@ -25,4 +25,15 @@
     <ProjectReference Include="..\VocabularyApp.Data\VocabularyApp.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Remove="Archive\**" />
+    <Content Remove="publish\**" />
+    <Content Remove="publish-*\**" />
+    <Content Remove="publish_*\**" />
+    <None Remove="Archive\**" />
+    <None Remove="publish\**" />
+    <None Remove="publish-*\**" />
+    <None Remove="publish_*\**" />
+  </ItemGroup>
+
 </Project>

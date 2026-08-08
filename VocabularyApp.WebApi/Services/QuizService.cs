@@ -279,7 +279,7 @@ namespace VocabularyApp.WebApi.Services
     {
       try
       {
-        var normalizedTake = Math.Clamp(take <= 0 ? 5 : take, 1, 20);
+        var normalizedTake = Math.Clamp(take <= 0 ? 5 : take, 1, 200);
 
         var groupedResults = await _db.QuizResults
             .Where(qr => qr.UserId == userId)

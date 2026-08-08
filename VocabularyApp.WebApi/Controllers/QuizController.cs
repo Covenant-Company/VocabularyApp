@@ -89,7 +89,7 @@ namespace VocabularyApp.WebApi.Controllers
 
     /// <summary>
     /// Get recent quiz history for the current user
-    /// GET: /api/quiz/history?take=5
+    /// GET: /api/quiz/history?take=60
     /// </summary>
     [HttpGet("history")]
     public async Task<IActionResult> GetQuizHistory([FromQuery] int take = 5)
