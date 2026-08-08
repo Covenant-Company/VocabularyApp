@@ -82,16 +82,24 @@ VocabularyApp/
 ```
 
 ### JWT Configuration
-```json
-{
-  "Jwt": {
-    "Key": "your-super-secret-jwt-key-that-is-at-least-32-characters-long",
-    "Issuer": "VocabularyApp",
-    "Audience": "VocabularyApp",
-    "ExpiryInMinutes": 60
-  }
-}
+
+The JWT signing key is required external configuration and must not be stored in
+`appsettings.json`, `appsettings.Development.json`, or other source-controlled files.
+It must contain at least 32 bytes for HS256.
+
+For local development, store a generated local-only key with ASP.NET Core User Secrets:
+
+```powershell
+dotnet user-secrets set "JwtSettings:SecretKey" "<generated-local-secret>" --project .\VocabularyApp.WebApi\VocabularyApp.WebApi.csproj
 ```
+
+Each developer should generate their own secret and must not commit or share it.
+
+For production on SmarterASP.NET, configure the signing key outside the deployed files
+as an environment variable named `JwtSettings__SecretKey`. Do not place its value in
+`web.config`, a publish profile, deployment scripts, or source control. After changing
+the production key, restart the API; tokens signed with the previous key will no longer
+be valid and users will need to sign in again.
 
 ## Security Features
 - **JWT Authentication**: Secure token-based authentication
