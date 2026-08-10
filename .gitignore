@@ -83,3 +83,5 @@ Thumbs.db
 # Python/tool caches (if created locally)
 __pycache__/
 *.pyc
+Docs/R2-Password-Hashing-Analysis.md
+Docs/R2-Password-Hashing-Implementation-Plan.md
