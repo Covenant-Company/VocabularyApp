@@ -3,6 +3,7 @@ using VocabularyApp.Data;
 using VocabularyApp.Data.Models;
 using VocabularyApp.WebApi.DTOs;
 using VocabularyApp.WebApi.Helpers;
+using VocabularyApp.WebApi.Security;
 
 namespace VocabularyApp.WebApi.Services;
 
@@ -10,12 +11,18 @@ public class UserService : IUserService
 {
     private readonly ApplicationDbContext _context;
     private readonly JwtHelper _jwtHelper;
+    private readonly IPasswordService _passwordService;
     private readonly ILogger<UserService> _logger;
 
-    public UserService(ApplicationDbContext context, JwtHelper jwtHelper, ILogger<UserService> logger)
+    public UserService(
+        ApplicationDbContext context,
+        JwtHelper jwtHelper,
+        IPasswordService passwordService,
+        ILogger<UserService> logger)
     {
         _context = context;
         _jwtHelper = jwtHelper;
+        _passwordService = passwordService;
         _logger = logger;
     }
 
@@ -50,14 +57,13 @@ public class UserService : IUserService
             }
 
             // Create new user
-            var hashedPassword = PasswordHelper.HashPassword(request.Password);
             var user = new User
             {
                 Username = request.Username,
                 Email = request.Email,
-                PasswordHash = hashedPassword,
                 CreatedAt = DateTime.UtcNow
             };
+            user.PasswordHash = _passwordService.HashPassword(user, request.Password);
 
             _context.Users.Add(user);
             await _context.SaveChangesAsync();

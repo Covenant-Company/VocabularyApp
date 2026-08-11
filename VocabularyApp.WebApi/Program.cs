@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using VocabularyApp.Data;
+using VocabularyApp.Data.Models;
 using VocabularyApp.WebApi.Configuration;
 using VocabularyApp.WebApi.Helpers;
+using VocabularyApp.WebApi.Security;
 using VocabularyApp.WebApi.Services;
 
 AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
@@ -45,6 +48,9 @@ builder.Services.AddScoped<IWordService, WordService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<JwtHelper>();
+builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddSingleton<ILegacyPasswordVerifier, LegacyPasswordVerifier>();
+builder.Services.AddSingleton<IPasswordService, PasswordService>();
 
 builder.Services.AddHttpClient<IWordService, WordService>();
 builder.Services.AddHttpClient();
