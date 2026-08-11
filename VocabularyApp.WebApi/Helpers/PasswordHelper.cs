@@ -3,10 +3,13 @@ using System.Text;
 
 namespace VocabularyApp.WebApi.Helpers;
 
+[Obsolete(
+    "Legacy SHA-256 compatibility helper. Do not use in production account flows; use IPasswordService instead.")]
 public static class PasswordHelper
 {
     /// <summary>
-    /// Hashes a password using SHA256 with a salt
+    /// Generates the historical SHA-256 format. Retained temporarily for historical
+    /// compatibility only; active account flows must use IPasswordService.
     /// </summary>
     public static string HashPassword(string password)
     {
@@ -25,7 +28,8 @@ public static class PasswordHelper
     }
     
     /// <summary>
-    /// Verifies a password against a stored hash
+    /// Verifies the historical SHA-256 format. Active legacy verification uses
+    /// ILegacyPasswordVerifier through IPasswordService.
     /// </summary>
     public static bool VerifyPassword(string password, string storedHash)
     {
