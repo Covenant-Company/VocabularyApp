@@ -28,10 +28,10 @@ VocabularyApp/
 ## Features Implemented
 
 ### 🔐 User Management
-- **User Registration**: Secure account creation with password hashing (SHA256 + salt)
+- **User Registration**: Secure account creation with ASP.NET Core adaptive password hashing
 - **User Authentication**: JWT-based login system with configurable token expiration
 - **Profile Management**: Update user profile information
-- **Password Security**: Industry-standard password hashing with unique salts
+- **Password Security**: Adaptive password hashing for new and changed passwords, with temporary legacy verification and transparent login migration
 
 ### 📚 Word Management
 - **Word Search**: Look up words in the local database with fuzzy matching
@@ -103,7 +103,9 @@ be valid and users will need to sign in again.
 
 ## Security Features
 - **JWT Authentication**: Secure token-based authentication
-- **Password Hashing**: SHA256 with unique salts per user
+- **Password Hashing**: Registration and password changes use ASP.NET Core `PasswordHasher<User>`. Existing salted SHA-256 credentials are temporarily accepted through a strict legacy verifier and are upgraded after a successful login; active account flows cannot generate the legacy format.
+- **Legacy Retirement**: Legacy verification remains temporary and may be removed only after the operational conditions in [R2 Password Hashing Deployment Validation](Updates/R2-Password-Hashing-Deployment-Validation.md) are satisfied.
+- **JWT Signing**: JWT HMAC-SHA256 signing is separate from password storage and is unchanged by the password-hashing migration.
 - **Authorization**: Protect sensitive endpoints with JWT requirements
 - **HTTPS**: Enforced HTTPS redirection in production
 - **Input Validation**: Data annotations for request validation
