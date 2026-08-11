@@ -85,3 +85,4 @@ __pycache__/
 *.pyc
 Docs/R2-Password-Hashing-Analysis.md
 Docs/R2-Password-Hashing-Implementation-Plan.md
+Docs/Updates/
