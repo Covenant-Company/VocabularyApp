@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using VocabularyApp.Data;
 
 namespace VocabularyApp.WebApi.Tests.Infrastructure;
@@ -30,6 +31,21 @@ public sealed class RelationalDatabaseFixture : IAsyncLifetime
         }
 
         return new ApplicationDbContext(_options);
+    }
+
+    public ApplicationDbContext CreateContext(params IInterceptor[] interceptors)
+    {
+        if (_connection is null)
+        {
+            throw new InvalidOperationException("The database fixture has not been initialized.");
+        }
+
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(_connection)
+            .AddInterceptors(interceptors)
+            .Options;
+
+        return new ApplicationDbContext(options);
     }
 
     public async Task DisposeAsync()

@@ -25,11 +25,6 @@ public interface IUserService
     Task<UserDto?> GetUserByUsernameAsync(string username);
     
     /// <summary>
-    /// Updates user's last login timestamp
-    /// </summary>
-    Task UpdateLastLoginAsync(int userId);
-    
-    /// <summary>
     /// Validates if a JWT token is valid and returns user info
     /// </summary>
     Task<UserDto?> ValidateTokenAsync(string token);

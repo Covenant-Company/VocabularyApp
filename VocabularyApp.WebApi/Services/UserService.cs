@@ -110,8 +110,9 @@ public class UserService : IUserService
                 };
             }
 
-            // Verify password
-            if (!PasswordHelper.VerifyPassword(request.Password, user.PasswordHash))
+            var verification = _passwordService.Verify(user, user.PasswordHash, request.Password);
+            if (verification.Status is PasswordVerificationStatus.Failed
+                or PasswordVerificationStatus.MalformedOrUnknown)
             {
                 _logger.LogWarning("Invalid password attempt for user: {Username}", request.Username);
                 return new AuthResponse
@@ -121,8 +122,63 @@ public class UserService : IUserService
                 };
             }
 
-            // Update last login
-            await UpdateLastLoginAsync(user.Id);
+            var requiresCredentialReplacement = verification.RequiresReplacement;
+            switch (verification.Status)
+            {
+                case PasswordVerificationStatus.Succeeded:
+                    break;
+
+                case PasswordVerificationStatus.SucceededRehashRequired:
+                case PasswordVerificationStatus.SucceededLegacyMigrationRequired:
+                    if (string.IsNullOrWhiteSpace(verification.ReplacementHash))
+                    {
+                        _logger.LogError(
+                            "Required password replacement was unavailable for user: {UserId}",
+                            user.Id);
+                        return new AuthResponse
+                        {
+                            Success = false,
+                            ErrorMessage = "An error occurred during login"
+                        };
+                    }
+
+                    user.PasswordHash = verification.ReplacementHash;
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported password verification status: {verification.Status}.");
+            }
+
+            user.LastLoginAt = DateTime.UtcNow;
+            try
+            {
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                _logger.LogWarning(
+                    "Login rejected because credentials changed concurrently for user: {UserId}",
+                    user.Id);
+                return new AuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "An error occurred during login"
+                };
+            }
+            catch (Exception ex) when (!requiresCredentialReplacement)
+            {
+                _logger.LogError(ex, "Error updating last login for user: {UserId}", user.Id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Required credential update failed for user: {UserId}", user.Id);
+                return new AuthResponse
+                {
+                    Success = false,
+                    ErrorMessage = "An error occurred during login"
+                };
+            }
 
             _logger.LogInformation("Successful login for user: {Username}", user.Username);
 
@@ -162,24 +218,6 @@ public class UserService : IUserService
             .FirstOrDefaultAsync(u => u.Username.ToLower() == username.ToLower());
 
         return user != null ? MapUserToDto(user) : null;
-    }
-
-    public async Task UpdateLastLoginAsync(int userId)
-    {
-        try
-        {
-            var user = await _context.Users.FindAsync(userId);
-            if (user != null)
-            {
-                user.LastLoginAt = DateTime.UtcNow;
-                await _context.SaveChangesAsync();
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error updating last login for user: {UserId}", userId);
-            // Don't throw - this is not critical for user experience
-        }
     }
 
     public async Task<UserDto?> ValidateTokenAsync(string token)
