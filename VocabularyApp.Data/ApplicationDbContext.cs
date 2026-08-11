@@ -29,6 +29,7 @@ public class ApplicationDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Username).IsUnique();
             entity.HasIndex(e => e.Email).IsUnique();
+            entity.Property(e => e.PasswordHash).IsConcurrencyToken();
         });
 
         // Configure Word entity

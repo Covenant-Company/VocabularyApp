@@ -235,6 +235,13 @@ public class UserService : IUserService
             _logger.LogInformation("Password changed successfully for user: {UserId}", userId);
             return true;
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            _logger.LogWarning(
+                "Password change rejected because credentials changed concurrently for user: {UserId}",
+                userId);
+            return false;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error changing password for user: {UserId}", userId);
