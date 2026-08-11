@@ -207,15 +207,29 @@ public class UserService : IUserService
             if (user == null)
                 return false;
 
-            // Verify current password
-            if (!PasswordHelper.VerifyPassword(currentPassword, user.PasswordHash))
+            // Verify current password in either supported stored format.
+            var verification = _passwordService.Verify(user, user.PasswordHash, currentPassword);
+            switch (verification.Status)
             {
-                _logger.LogWarning("Invalid current password provided for user: {UserId}", userId);
-                return false;
+                case PasswordVerificationStatus.Failed:
+                case PasswordVerificationStatus.MalformedOrUnknown:
+                    _logger.LogWarning("Invalid current password provided for user: {UserId}", userId);
+                    return false;
+
+                case PasswordVerificationStatus.Succeeded:
+                case PasswordVerificationStatus.SucceededRehashRequired:
+                case PasswordVerificationStatus.SucceededLegacyMigrationRequired:
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported password verification status: {verification.Status}.");
             }
 
-            // Hash new password and update
-            user.PasswordHash = PasswordHelper.HashPassword(newPassword);
+            // A password change directly replaces any current format with one
+            // modern hash of the new password. Suggested old-password rehashes
+            // are intentionally not persisted.
+            user.PasswordHash = _passwordService.HashPassword(user, newPassword);
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Password changed successfully for user: {UserId}", userId);

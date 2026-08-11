@@ -14,6 +14,8 @@ public sealed class ControlledPasswordHasher : IPasswordHasher<User>
 
     public string? HashPasswordResult { get; set; }
 
+    public Func<User, string, string>? HashPasswordFactory { get; set; }
+
     public PasswordVerificationResult? VerificationResult { get; set; }
 
     public Exception? VerificationException { get; set; }
@@ -25,6 +27,11 @@ public sealed class ControlledPasswordHasher : IPasswordHasher<User>
     public string HashPassword(User user, string password)
     {
         HashPasswordCallCount++;
+
+        if (HashPasswordFactory is not null)
+        {
+            return HashPasswordFactory(user, password);
+        }
 
         if (HashPasswordResult is not null)
         {
