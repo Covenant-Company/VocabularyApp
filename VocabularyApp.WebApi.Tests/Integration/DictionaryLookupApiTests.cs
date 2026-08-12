@@ -17,7 +17,9 @@ public sealed class DictionaryLookupApiTests
         var wordText = UniqueWord("cached");
         await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
             factory, wordText, "Cached definition");
-        using var client = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var client = authenticated.Client;
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
         var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
@@ -38,7 +40,9 @@ public sealed class DictionaryLookupApiTests
             wordText,
             HttpStatusCode.OK,
             ProviderJson(wordText, "verb", "Provider definition"));
-        using var client = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var client = authenticated.Client;
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
         var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
@@ -63,7 +67,9 @@ public sealed class DictionaryLookupApiTests
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = UniqueWord("not-found");
         RegisterProviderResponse(factory, wordText, HttpStatusCode.NotFound, "{}");
-        using var client = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var client = authenticated.Client;
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
 
@@ -80,7 +86,9 @@ public sealed class DictionaryLookupApiTests
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = UniqueWord("provider-error");
         RegisterProviderResponse(factory, wordText, HttpStatusCode.InternalServerError, "{}");
-        using var client = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var client = authenticated.Client;
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
 
@@ -101,7 +109,9 @@ public sealed class DictionaryLookupApiTests
             wordText,
             HttpStatusCode.OK,
             ProviderJson(wordText, "unmapped-provider-pos", "Fallback definition"));
-        using var client = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var client = authenticated.Client;
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
 

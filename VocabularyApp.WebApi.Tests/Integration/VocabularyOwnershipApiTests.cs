@@ -259,25 +259,32 @@ public sealed class VocabularyOwnershipApiTests
     }
 
     [Fact]
-    public async Task CanonicalWordAddIsCurrentlyAnonymousAndWritesSharedData()
+    public async Task DirectCanonicalWordAddIsUnavailableToAnonymousAndAuthenticatedUsers()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
-        using var client = factory.CreateClient();
+        using var anonymousClient = factory.CreateClient();
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
         var wordText = UniqueWord("anonymous-canonical");
+        var request = new AddWordRequest
+        {
+            Word = wordText,
+            Definition = "Caller-authored canonical definition",
+            PartOfSpeech = "Noun"
+        };
 
-        using var response = await client.PostAsJsonAsync(
-            "/api/words/add",
-            new AddWordRequest
-            {
-                Word = wordText,
-                Definition = "Anonymous canonical definition",
-                PartOfSpeech = "Noun"
-            });
+        using var anonymousResponse = await anonymousClient.PostAsJsonAsync(
+            "/api/words/add", request);
+        using var authenticatedResponse = await authenticated.Client.PostAsJsonAsync(
+            "/api/words/add", request);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, anonymousResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, authenticatedResponse.StatusCode);
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.True(await context.Words.AnyAsync(word => word.Text == wordText));
+        Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
+        Assert.False(await context.WordDefinitions.AnyAsync(
+            definition => definition.Definition == request.Definition));
     }
 
     private static Task<HttpResponseMessage> AddVocabularyAsync(
