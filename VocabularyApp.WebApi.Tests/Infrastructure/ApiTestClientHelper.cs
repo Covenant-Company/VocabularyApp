@@ -114,7 +114,7 @@ public static class ApiTestClientHelper
         }
     }
 
-    private static async Task<ApiCallResult<T>> ReadApiResultAsync<T>(
+    public static async Task<ApiCallResult<T>> ReadApiResultAsync<T>(
         HttpResponseMessage response)
     {
         var rawContent = await response.Content.ReadAsStringAsync();
