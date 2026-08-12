@@ -30,6 +30,7 @@ public class UsersController : ControllerBase
     /// <response code="200">User created successfully</response>
     /// <response code="400">Invalid registration data or user already exists</response>
     [HttpPost("register")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResult<AuthResponse>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
     public async Task<ActionResult<ApiResult<AuthResponse>>> Register([FromBody] CreateUserRequest request)
@@ -77,6 +78,7 @@ public class UsersController : ControllerBase
     /// <response code="401">Invalid credentials</response>
     /// <response code="400">Invalid login data</response>
     [HttpPost("login")]
+    [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResult<AuthResponse>), 200)]
     [ProducesResponseType(typeof(ApiResult<object>), 401)]
     [ProducesResponseType(typeof(ApiResult<object>), 400)]
