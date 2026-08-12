@@ -349,6 +349,8 @@ namespace VocabularyApp.WebApi.Services
       }
     }
 
+    internal static void ClearQuizSessionsForTesting() => QuizSessions.Clear();
+
     private class QuizVocabularyEntry
     {
       public int UserWordId { get; set; }

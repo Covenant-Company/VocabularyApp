@@ -18,6 +18,8 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     private static readonly JwtSettings TestJwtSettings = TestJwtSettingsFactory.Create();
     private readonly SqliteConnection _connection;
 
+    public ControllableDictionaryHandler DictionaryHandler { get; } = new();
+
     static VocabularyAppWebApplicationFactory()
     {
         // WebApplicationFactory executes the top-level entry point before its later
@@ -74,7 +76,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
             services.RemoveAll<IWordService>();
             services.AddHttpClient<IWordService, WordService>()
                 .ConfigurePrimaryHttpMessageHandler(
-                    static () => new NoNetworkDictionaryHandler());
+                    () => DictionaryHandler);
         });
     }
 
@@ -99,12 +101,4 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
         }
     }
 
-    private sealed class NoNetworkDictionaryHandler : HttpMessageHandler
-    {
-        protected override Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken) =>
-            throw new InvalidOperationException(
-                $"Unexpected outbound dictionary request during an integration test: {request.Method} {request.RequestUri}");
-    }
 }

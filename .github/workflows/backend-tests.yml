@@ -1,0 +1,32 @@
+name: Backend tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Restore, build, and test
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore solution
+        run: dotnet restore VocabularyApp.sln
+
+      - name: Build solution
+        run: dotnet build VocabularyApp.sln --configuration Release --no-restore
+
+      - name: Run automated tests
+        run: dotnet test VocabularyApp.sln --configuration Release --no-build
