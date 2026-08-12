@@ -116,3 +116,7 @@ app.MapControllers();
 app.MapFallbackToFile("{*path:nonfile}", "index.html");
 
 app.Run();
+
+public partial class Program
+{
+}
