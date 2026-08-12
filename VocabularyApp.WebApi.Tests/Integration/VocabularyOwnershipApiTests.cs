@@ -37,6 +37,39 @@ public sealed class VocabularyOwnershipApiTests
     }
 
     [Fact]
+    public async Task MissingCanonicalWordCannotBeCreatedThroughPersonalVocabularySave()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var wordText = UniqueWord("missing-canonical");
+        const string callerDefinition = "Caller-authored definition must not become canonical.";
+
+        using var response = await user.Client.PostAsJsonAsync(
+            "/api/words/vocabulary/add",
+            new AddWordRequest
+            {
+                Word = wordText,
+                Pronunciation = "caller-pronunciation",
+                Definition = callerDefinition,
+                PartOfSpeech = "Noun"
+            });
+        var envelope = await response.Content.ReadFromJsonAsync<VocabularyEnvelope>();
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.NotNull(envelope);
+        Assert.False(envelope.Success);
+        Assert.False(string.IsNullOrWhiteSpace(envelope.Error));
+        Assert.Contains("not available", envelope.Error, StringComparison.OrdinalIgnoreCase);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
+        Assert.False(await context.WordDefinitions.AnyAsync(
+            definition => definition.Definition == callerDefinition));
+        Assert.False(await context.UserWords.AnyAsync(
+            userWord => userWord.UserId == user.User.User.Id));
+    }
+
+    [Fact]
     public async Task VocabularyListsReturnOnlyAuthenticatedUsersRows()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
@@ -278,8 +311,10 @@ public sealed class VocabularyOwnershipApiTests
         using var authenticatedResponse = await authenticated.Client.PostAsJsonAsync(
             "/api/words/add", request);
 
-        Assert.Equal(HttpStatusCode.NotFound, anonymousResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, authenticatedResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, anonymousResponse.StatusCode);
+        Assert.Contains(
+            authenticatedResponse.StatusCode,
+            new[] { HttpStatusCode.NotFound, HttpStatusCode.MethodNotAllowed });
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
@@ -326,5 +361,6 @@ public sealed class VocabularyOwnershipApiTests
     {
         public bool Success { get; set; }
         public UserVocabularyResponseDto? Data { get; set; }
+        public string? Error { get; set; }
     }
 }

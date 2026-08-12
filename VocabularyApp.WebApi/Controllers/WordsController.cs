@@ -56,32 +56,6 @@ namespace VocabularyApp.WebApi.Controllers
         }
 
         /// <summary>
-        /// Add word to canonical dictionary (admin endpoint)
-        /// POST: /api/words/add
-        /// </summary>
-        [HttpPost("add")]
-        public async Task<IActionResult> AddWord([FromBody] AddWordRequest request)
-        {
-            if (request == null || string.IsNullOrWhiteSpace(request.Word))
-                return BadRequest(new { success = false, error = "Word is required." });
-
-            try
-            {
-                var result = await _wordService.AddWordAsync(request);
-
-                // if (!result.Success.Equals(false))
-                //     return BadRequest(new { success = false, error = result.Message ?? "Failed to add word." });
-
-                return Ok(new { success = true, data = result.Data });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error adding word '{Word}'", request?.Word);
-                return StatusCode(500, new { success = false, error = "Internal server error" });
-            }
-        }
-
-        /// <summary>
         /// Add a word to the *user's* vocabulary (example path your Angular uses earlier)
         /// POST: /api/words/vocabulary/add
         /// </summary>

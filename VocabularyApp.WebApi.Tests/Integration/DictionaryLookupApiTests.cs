@@ -125,6 +125,35 @@ public sealed class DictionaryLookupApiTests
         Assert.Equal("Noun", partOfSpeech);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task InvalidProviderCanonicalWordDoesNotFallBackToCallerInputOrPersist(
+        string? providerWord)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var lookupTerm = UniqueWord("invalid-provider-word");
+        RegisterProviderResponse(
+            factory,
+            lookupTerm,
+            HttpStatusCode.OK,
+            ProviderJson(providerWord, "noun", "Provider definition"));
+        using var authenticated = await ApiTestClientHelper
+            .RegisterAndCreateAuthenticatedClientAsync(factory);
+
+        using var response = await authenticated.Client.GetAsync(
+            $"/api/words/lookup/{lookupTerm}");
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Single(factory.DictionaryHandler.Requests);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await context.Words.AnyAsync(word => word.Text == lookupTerm));
+        Assert.False(await context.WordDefinitions.AnyAsync(
+            definition => definition.Definition == "Provider definition"));
+    }
+
     private static void RegisterProviderResponse(
         VocabularyAppWebApplicationFactory factory,
         string word,
@@ -135,7 +164,7 @@ public sealed class DictionaryLookupApiTests
             statusCode,
             json);
 
-    private static string ProviderJson(string word, string partOfSpeech, string definition) =>
+    private static string ProviderJson(string? word, string partOfSpeech, string definition) =>
         JsonSerializer.Serialize(new[]
         {
             new

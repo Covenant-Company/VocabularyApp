@@ -22,7 +22,6 @@ public sealed class R3SecurityContractApiTests
         "UsersController.Register:AnonymousByDesign",
         "UsersController.ValidateToken:AuthenticationRequired",
         "WordsController.AddToVocabulary:AuthenticationRequired",
-        "WordsController.AddWord:MustBeRemoved",
         "WordsController.GetUserVocabulary:AuthenticationRequired",
         "WordsController.LookupWord:AuthenticationRequired",
         "WordsController.SearchUserVocabulary:AuthenticationRequired",

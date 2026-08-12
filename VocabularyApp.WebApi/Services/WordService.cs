@@ -76,6 +76,13 @@ namespace VocabularyApp.WebApi.Services
 
                 var first = apiData[0];
 
+                var providerWord = first.Word?.Trim();
+                if (string.IsNullOrWhiteSpace(providerWord))
+                {
+                    return ServiceResult<object>.Failure(
+                        "The dictionary provider returned invalid canonical word data.");
+                }
+
                 // Extract audio URL from phonetics array
                 var audioUrl = first.Phonetics?
                     .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Audio))?.Audio;
@@ -83,7 +90,7 @@ namespace VocabularyApp.WebApi.Services
                 // Create canonical Word
                 var newWord = new Word
                 {
-                    Text = first.Word ?? normalized,
+                    Text = providerWord,
                     Pronunciation = first.Phonetic,
                     AudioUrl = audioUrl
                 };
@@ -150,47 +157,6 @@ namespace VocabularyApp.WebApi.Services
             }
         }
 
-        public async Task<ServiceResult<object>> AddWordAsync(AddWordRequest request)
-        {
-            if (request == null || string.IsNullOrWhiteSpace(request.Word))
-                return ServiceResult<object>.Failure("Word is required.");
-
-            try
-            {
-                // Ensure canonical word exists; if not, create a minimal entry
-                var word = await _db.Words.FirstOrDefaultAsync(w => w.Text == request.Word);
-                if (word == null)
-                {
-                    word = new Word { Text = request.Word!, Pronunciation = request.Pronunciation };
-                    _db.Words.Add(word);
-                    await _db.SaveChangesAsync();
-                }
-
-                // Optionally add a canonical definition if provided
-                if (!string.IsNullOrWhiteSpace(request.Definition))
-                {
-                    var pos = await ResolvePartOfSpeechAsync(request.PartOfSpeech);
-                    var def = new WordDefinition
-                    {
-                        WordId = word.Id,
-                        PartOfSpeechId = pos.Id,
-                        Definition = request.Definition!,
-                        Example = request.Example,
-                        DisplayOrder = 1
-                    };
-                    _db.WordDefinitions.Add(def);
-                    await _db.SaveChangesAsync();
-                }
-
-                return ServiceResult<object>.Success(new { message = "Word added successfully", wordId = word.Id });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error adding word '{Word}'", request.Word);
-                return ServiceResult<object>.Failure("Failed to add word");
-            }
-        }
-
         public async Task<ServiceResult<object>> AddToVocabularyAsync(int userId, AddWordRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Word))
@@ -198,14 +164,12 @@ namespace VocabularyApp.WebApi.Services
 
             try
             {
-                // Ensure canonical word exists
+                // Personal vocabulary may only reference provider-backed canonical data.
                 var word = await _db.Words.FirstOrDefaultAsync(w => w.Text == request.Word);
                 if (word == null)
                 {
-                    // Create minimal canonical entry
-                    word = new Word { Text = request.Word!, Pronunciation = request.Pronunciation };
-                    _db.Words.Add(word);
-                    await _db.SaveChangesAsync();
+                    return ServiceResult<object>.Failure(
+                        "Word is not available in the canonical dictionary. Look it up before adding it to your vocabulary.");
                 }
 
                 var pos = await ResolvePartOfSpeechAsync(request.PartOfSpeech);
