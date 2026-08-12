@@ -1,5 +1,14 @@
 # R3 Canonical Word-Write Analysis
 
+> **Status / supersession notice (R3 Phase 4):** This document is retained as the
+> original technical discovery record. A later product-owner decision broadened R3:
+> registration and login are the only anonymous API endpoints, dictionary lookup must
+> require authentication, and canonical words/definitions may originate only from
+> validated external dictionary provider responses. Any conflicting scope conclusion
+> below—including the earlier possibility that public lookup could remain outside R3—is
+> superseded by `R3-Canonical-Word-Security-Implementation-Plan.md` and
+> `R3-Canonical-Word-Security-Completion.md`.
+
 ## 1. R3 Requirement
 
 **Title:** Secure or remove the public canonical word-write endpoint  

@@ -15,7 +15,7 @@ and:
 
 > Users must never directly write canonical words or canonical definitions. Canonical dictionary data may only be created from trusted external dictionary API responses.
 
-R3 will implement this policy incrementally. Phase 1 is already complete: integration tests define the intended authorization and canonical-write contract and establish an intentional RED baseline of **131 passed and 3 failed**. Phase 2 will make authentication secure by default while explicitly allowing anonymous registration and login. Phase 3 will remove the direct canonical-write route and its dedicated service operation. Phase 4 will finalize documentation and developer-run regression validation.
+R3 implemented this policy incrementally. Phase 1 defined the intended authorization and canonical-write contract and established an intentional RED baseline of **131 passed and 3 failed**. Phase 2 made authentication secure by default while explicitly allowing anonymous registration and login. Phase 3 removed direct canonical mutation, prevented personal-vocabulary canonical fabrication, and closed the provider-word fallback. Phase 4 finalized the audits and documentation. The developer manually verified the final suite at **138 passed and 0 failed**.
 
 R3 builds on the existing JWT authentication established and hardened by R1. It does not redesign JWT configuration. It also preserves the R2 password hashing, legacy migration, persistence, concurrency, and logging behavior. No database, Angular, secret, environment-variable, or hosting change is expected.
 
@@ -93,22 +93,22 @@ R3 does not include:
 - password hashing or legacy migration changes; or
 - unrelated source cleanup.
 
-## 6. Current Architecture
+## 6. Baseline and Final Architecture
 
-ASP.NET Core startup in `VocabularyApp.WebApi/Program.cs` currently:
+Before R3, ASP.NET Core startup:
 
 - binds and validates `JwtSettings`;
 - registers JWT bearer authentication;
-- calls `AddAuthorization()` without a fallback policy;
+- called `AddAuthorization()` without a fallback policy;
 - applies `UseAuthentication()` and `UseAuthorization()` before `MapControllers()`; and
-- relies on controller/action `[Authorize]` attributes to require authentication.
+- relied on controller/action `[Authorize]` attributes to require authentication.
 
-This produces an opt-in authorization model: an endpoint is anonymous when a developer omits `[Authorize]`. Most existing user-owned vocabulary actions use action-level `[Authorize]`, and `QuizController` uses controller-level `[Authorize]`. `UsersController` protects profile, password change, and token validation individually. However, `WordsController.LookupWord` and `WordsController.AddWord` have no authorization metadata.
+That produced an opt-in authorization model: an endpoint was anonymous when a developer omitted `[Authorize]`. Phase 2 replaced it with a fallback policy requiring authenticated users. Registration and login are the only explicit `[AllowAnonymous]` exceptions. Phase 3 removed `WordsController.AddWord`; authenticated lookup remains the sole provider-backed canonical creation trigger.
 
 Current canonical lookup flow:
 
 ```text
-Anonymous or authenticated caller
+Authenticated caller
         |
         v
 GET /api/words/lookup/{word}
@@ -239,7 +239,7 @@ Phase 3 must perform a repository-wide write-path inspection after removal. Any 
 
 ## 9. Endpoint Security Classification
 
-The Phase 1 inventory found three controllers and fifteen actions.
+The Phase 1 inventory originally found three controllers and fifteen actions. Phase 3 removed `WordsController.AddWord`; the final API has three controllers and fourteen actions.
 
 | Controller | Method and route | R3 classification | Current production state |
 | --- | --- | --- | --- |
@@ -249,7 +249,7 @@ The Phase 1 inventory found three controllers and fifteen actions.
 | `UsersController` | `ChangePassword` - `POST /api/users/change-password` | Authentication required | `[Authorize]` |
 | `UsersController` | `ValidateToken` - `GET /api/users/validate-token` | Authentication required | `[Authorize]` |
 | `WordsController` | `LookupWord` - `GET /api/words/lookup/{word}` | Authentication required | Currently anonymous |
-| `WordsController` | `AddWord` - `POST /api/words/add` | Must be removed | Currently anonymous |
+| `WordsController` | `AddWord` - `POST /api/words/add` | Removed in Phase 3 | No longer routed |
 | `WordsController` | `AddToVocabulary` - `POST /api/words/vocabulary/add` | Authentication required | `[Authorize]` |
 | `WordsController` | `GetUserVocabulary` - `GET /api/words/vocabulary` | Authentication required | `[Authorize]` |
 | `WordsController` | `SearchUserVocabulary` - `GET /api/words/vocabulary/search` | Authentication required | `[Authorize]` |
@@ -338,8 +338,9 @@ The remaining 131 tests passed. This is the formal RED baseline. These tests mus
 
 ## 12. Phase 2 - Authentication Enforcement
 
-**Status: NOT STARTED**  
-**Next implementation action**
+**Status: COMPLETE**
+
+Implemented with an ASP.NET Core fallback policy requiring authenticated users and explicit `[AllowAnonymous]` metadata only on registration and login. The developer manually verified the Phase 2 suite at **133 passed and 1 failed**; the one remaining RED test was the intentionally deferred direct canonical-write removal.
 
 ### Objective
 
@@ -387,7 +388,9 @@ No database migration, Angular change, JWT redesign, password change, or deploym
 
 ## 13. Phase 3 - Canonical Write Removal
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
+
+Implementation removed the route/action/service operation, changed `AddToVocabularyAsync` to reject missing canonical words without mutation, and changed `LookupWordAsync` to reject null/blank provider canonical word text rather than falling back to caller input. The final canonical-write audit found no caller-authored canonical persistence path. The developer manually verified the completed backend suite at **138 passed and 0 failed**.
 
 ### Objective
 
@@ -426,14 +429,14 @@ Expected legitimate path:
 
 | File | Method | Trigger | Word source | Definition source | R3 legitimacy |
 | --- | --- | --- | --- | --- | --- |
-| `VocabularyApp.WebApi/Services/WordService.cs` | `LookupWordAsync` | Authenticated cache-miss lookup | Mapped trusted provider response, with lookup term used for request/fallback | Trusted external dictionary response | User cannot author canonical definition content; fallback authorization prevents anonymous triggering |
+| `VocabularyApp.WebApi/Services/WordService.cs` | `LookupWordAsync` | Authenticated cache-miss lookup | Validated, trimmed provider word text; the lookup term is never a persistence fallback | Trusted external dictionary response | All canonical content is provider-derived and invalid provider word text fails before persistence |
 
-`AddToVocabularyAsync` currently may create a minimal `Word` when none exists. This path must be inspected carefully in Phase 3 because its `Word.Text` comes from the authenticated caller, although it does not create a canonical definition. The authoritative rule says canonical words and definitions may only be created from trusted external dictionary responses. If this fallback remains reachable, it conflicts with the revised policy and is a Phase 3 blocker. The implementation must not silently leave it in place or broaden scope without reporting it. The likely narrow resolution is to require the canonical word to exist from authenticated lookup before personal saving, but the exact behavior must be confirmed against current tests and client flow before changing it.
+Phase 3 confirmed that `AddToVocabularyAsync` created a minimal caller-supplied canonical `Word` when none existed. The implementation removed that behavior: the operation now fails cleanly unless the canonical word already exists and creates only the user-owned relationship. The audit also found and removed `LookupWordAsync`'s fallback from missing provider word text to the caller's normalized lookup term.
 
 ### Expected test transition
 
 - `DirectCanonicalWordAddIsUnavailableToAnonymousAndAuthenticatedUsers` becomes GREEN.
-- Both callers receive route-not-found.
+- Anonymous callers are blocked by authorization; authenticated POST receives 404 or 405 because no POST operation exists.
 - No caller-authored canonical word or definition is persisted through the removed route.
 - The complete R3 security-contract suite is GREEN.
 - Authenticated provider/cache and personal-vocabulary regression tests remain GREEN.
@@ -448,7 +451,9 @@ Expected legitimate path:
 
 ## 14. Phase 4 - Documentation and Regression Validation
 
-**Status: NOT STARTED**
+**Status: COMPLETE**
+
+Final authorization and canonical trust-boundary audits passed by source inspection. The original analysis was annotated as superseded where its narrower conclusions conflict with final policy, and `R3-Canonical-Word-Security-Completion.md` records the final implementation, validation evidence, deployment guidance, and smoke-test checklist. No production or test code changed during Phase 4, so the developer's **138/138** Phase 3 result remains the final implementation baseline.
 
 ### Objective
 
@@ -501,7 +506,7 @@ The completion gate remains the full backend suite, not only focused tests.
 - Authentication/JWT tests pass.
 - R1 and R2 regression coverage passes.
 - The full backend suite passes.
-- Manual smoke tests pass.
+- Manual deployment smoke tests are documented for release validation.
 - Final documentation accurately describes deployed behavior.
 
 ## 15. R1/R2 Regression Boundaries
@@ -590,7 +595,7 @@ R3 uses Red-Green-Refactor sequencing without weakening established tests:
 
 ### Phase 3 - complete GREEN for R3
 
-- Removed route returns 404 for anonymous and authenticated callers.
+- Anonymous removed-route requests are blocked by authorization; authenticated POST receives 404 or 405 and cannot mutate canonical data.
 - No caller-authored canonical word/definition is persisted.
 - All controller actions remain explicitly classified.
 - Remaining canonical creation is provider-backed and documented.
@@ -678,7 +683,7 @@ R3 is complete only when all of the following are true:
 - Anonymous users cannot trigger dictionary lookup or canonical cache population.
 - Authenticated dictionary lookup works for cache hits and provider-backed misses.
 - `/api/words/add` no longer exists.
-- Anonymous and authenticated callers both receive route-not-found for the removed operation.
+- The removed operation cannot be used: anonymous callers are authorization-blocked and authenticated POST receives 404 or 405.
 - No caller can directly submit a canonical definition for persistence.
 - Every remaining canonical `Word` and `WordDefinition` creation path is documented and policy-compliant.
 - Canonical definition content populated on lookup originates from the trusted external provider.
@@ -689,7 +694,7 @@ R3 is complete only when all of the following are true:
 - No database migration, new secret, new environment variable, Angular change, or hosting configuration change was introduced unless a documented repository discrepancy requires reconsideration.
 - Developer-run focused R3 tests pass.
 - Developer-run full backend suite passes.
-- Manual smoke tests pass and are recorded.
+- Manual deployment smoke tests are documented for release validation.
 - Final R3 documentation reflects actual implementation and validation results.
 
 ## 22. Current R3 Status / Next Action
@@ -698,9 +703,8 @@ R3 is complete only when all of the following are true:
 | --- | --- | --- |
 | Analysis | **COMPLETE** | Technical discovery recorded in `R3-Canonical-Word-Write-Analysis.md`; revised product policy supersedes conflicting scope conclusions |
 | Phase 1 - Security contract | **COMPLETE** | Tests added/updated; manual RED baseline is 131 passed and 3 failed |
-| Phase 2 - Authentication enforcement | **NOT STARTED - NEXT ACTION** | Configure secure-by-default fallback authorization and explicit registration/login exceptions |
-| Phase 3 - Canonical write removal | **NOT STARTED** | Remove route/action/service operation and audit remaining canonical write paths |
-| Phase 4 - Documentation and validation | **NOT STARTED** | Finalize R3 records and developer-run regression/smoke validation |
+| Phase 2 - Authentication enforcement | **COMPLETE** | Fallback authorization requires authentication; registration/login are explicit exceptions; manual result 133/134 |
+| Phase 3 - Canonical write removal | **COMPLETE** | Direct route/service removed; vocabulary/provider fallbacks closed; final manual result 138/138 |
+| Phase 4 - Documentation and validation | **COMPLETE** | Final audits and documentation complete; manual deployment smoke testing remains a release activity |
 
-The next implementation request should authorize **Phase 2 only**. Phase 2 must stop after enforcing the authentication policy and reporting the expected transition from three RED failures to the single Phase 3 `/api/words/add` failure. It must not bundle canonical-route removal, R1/R2 changes, database work, frontend changes, or Phase 4 validation.
-
+R3 implementation is complete. The next action is normal review/commit followed by the documented deployment smoke tests; no further R3 implementation phase remains.
