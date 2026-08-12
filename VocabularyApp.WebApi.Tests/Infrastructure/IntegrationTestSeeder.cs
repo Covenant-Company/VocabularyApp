@@ -54,6 +54,58 @@ public static class IntegrationTestSeeder
 
         return new SeededWord(word.Id, wordDefinition.Id, partOfSpeech.Id);
     }
+
+    public static async Task<int> SeedDefinitionAsync(
+        VocabularyAppWebApplicationFactory factory,
+        int wordId,
+        string definition,
+        string partOfSpeechName = "Noun",
+        int displayOrder = 2)
+    {
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var partOfSpeechId = await context.PartsOfSpeech
+            .Where(candidate => candidate.Name == partOfSpeechName)
+            .Select(candidate => candidate.Id)
+            .SingleAsync();
+        var wordDefinition = new WordDefinition
+        {
+            WordId = wordId,
+            PartOfSpeechId = partOfSpeechId,
+            Definition = definition,
+            DisplayOrder = displayOrder
+        };
+        context.WordDefinitions.Add(wordDefinition);
+        await context.SaveChangesAsync();
+        return wordDefinition.Id;
+    }
+
+    public static async Task<int> SeedUserWordAsync(
+        VocabularyAppWebApplicationFactory factory,
+        int userId,
+        SeededWord word,
+        int? preferredWordDefinitionId = null,
+        bool isFavorite = false,
+        int correctAnswers = 0,
+        int totalAttempts = 0)
+    {
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var userWord = new UserWord
+        {
+            UserId = userId,
+            WordId = word.WordId,
+            PartOfSpeechId = word.PartOfSpeechId,
+            PreferredWordDefinitionId = preferredWordDefinitionId ?? word.WordDefinitionId,
+            IsFavorite = isFavorite,
+            CorrectAnswers = correctAnswers,
+            TotalAttempts = totalAttempts,
+            AddedAt = DateTime.UtcNow
+        };
+        context.UserWords.Add(userWord);
+        await context.SaveChangesAsync();
+        return userWord.Id;
+    }
 }
 
 public sealed record SeededWord(
