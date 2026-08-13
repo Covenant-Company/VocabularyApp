@@ -617,9 +617,7 @@ export class WordLookupComponent implements OnInit {
     });
   }
 
-  toggleFavorite(word: VocabularyItem, event: Event): void {
-    event.stopPropagation();
-
+  toggleFavorite(word: VocabularyItem): void {
     const newValue = !word.isFavorite;
     const previousValue = word.isFavorite;
     word.isFavorite = newValue;

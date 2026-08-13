@@ -23,6 +23,78 @@ describe('WordLookupComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('should remove Save for Later while preserving Add to My Vocabulary', () => {
+    component.currentWord = {
+      word: 'serendipity',
+      partOfSpeechGroups: [],
+      source: 'external'
+    };
+    component.viewingFromVocabularyList = false;
+    fixture.detectChanges();
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
+    expect(text).not.toContain('Save for Later');
+    expect(text).toContain('Add to My Vocabulary');
+  });
+
+  it('should render saved-word detail and Favorite as separate sibling buttons', () => {
+    renderSavedWords(false);
+
+    const detailButton = findButtonByText('Serendipity');
+    const favoriteButton = findButtonByLabel('Add Serendipity to favorites');
+
+    expect(detailButton).toBeTruthy();
+    expect(favoriteButton).toBeTruthy();
+    expect(detailButton.parentElement).toBe(favoriteButton.parentElement);
+    expect(detailButton.contains(favoriteButton)).toBeFalse();
+    expect(favoriteButton.contains(detailButton)).toBeFalse();
+    expect(favoriteButton.getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('should expose the favorited state and removal action in the Favorite button', () => {
+    renderSavedWords(true);
+
+    const favoriteButton = findButtonByLabel('Remove Serendipity from favorites');
+
+    expect(favoriteButton).toBeTruthy();
+    expect(favoriteButton.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('should open the correct saved word from its native detail button', () => {
+    renderSavedWords(false);
+    const word = component.vocabularyResponse!.words[0];
+    const viewWordDetails = spyOn(component, 'viewWordDetails');
+
+    findButtonByText('Serendipity').click();
+
+    expect(viewWordDetails).toHaveBeenCalledOnceWith(word);
+  });
+
+  it('should toggle Favorite without opening saved-word details', () => {
+    renderSavedWords(false);
+    const word = component.vocabularyResponse!.words[0];
+    const toggleFavorite = spyOn(component, 'toggleFavorite');
+    const viewWordDetails = spyOn(component, 'viewWordDetails');
+
+    findButtonByLabel('Add Serendipity to favorites').click();
+
+    expect(toggleFavorite).toHaveBeenCalledOnceWith(word);
+    expect(viewWordDetails).not.toHaveBeenCalled();
+  });
+
+  it('should associate a programmatic label with the saved-vocabulary filter', () => {
+    component.showVocabularyList = true;
+    fixture.detectChanges();
+
+    const label = fixture.nativeElement.querySelector('label[for="vocabulary-filter"]') as HTMLLabelElement;
+    const input = fixture.nativeElement.querySelector('#vocabulary-filter') as HTMLInputElement;
+
+    expect(label).toBeTruthy();
+    expect(label.textContent).toContain('Search saved vocabulary');
+    expect(input).toBeTruthy();
+    expect(input.id).toBe(label.htmlFor);
+  });
+
   it('should clear current word when user starts typing', () => {
     // Setup: Set up a current word and sorted groups
     component.currentWord = {
@@ -187,4 +259,38 @@ describe('WordLookupComponent', () => {
 
     expect(highlighted).toContain('<mark class="search-highlight">Luck</mark>');
   });
+
+  function renderSavedWords(isFavorite: boolean): void {
+    component.showVocabularyList = true;
+    component.vocabularyResponse = {
+      words: [
+        {
+          id: 1,
+          word: 'Serendipity',
+          definition: 'Lucky discovery',
+          partOfSpeech: 'Noun',
+          addedAt: '',
+          isFavorite,
+          correctAnswers: 0,
+          totalAttempts: 0
+        }
+      ],
+      totalCount: 1,
+      page: 1,
+      pageSize: 1000,
+      totalPages: 1
+    };
+    component.selectedVocabularyLetter = 'S';
+    fixture.detectChanges();
+  }
+
+  function findButtonByText(text: string): HTMLButtonElement {
+    const root = fixture.nativeElement as HTMLElement;
+    return Array.from(root.querySelectorAll('button'))
+      .find(button => button.textContent?.includes(text)) as HTMLButtonElement;
+  }
+
+  function findButtonByLabel(label: string): HTMLButtonElement {
+    return fixture.nativeElement.querySelector(`button[aria-label="${label}"]`) as HTMLButtonElement;
+  }
 });

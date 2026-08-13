@@ -144,10 +144,6 @@
               <span *ngIf="currentWord.source !== 'user' && !wordAddedToVocabulary">+ Add to My Vocabulary</span>
             </button>
 
-            <button
-              class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors duration-200">
-              🔖 Save for Later
-            </button>
           </div>
         </div>
 
@@ -274,10 +270,13 @@
 
       <!-- Search Input for Vocabulary -->
       <div class="mb-6 relative">
+        <label for="vocabulary-filter" class="block text-sm font-medium text-gray-700 mb-2">
+          Search saved vocabulary
+        </label>
         <div
           class="flex items-center gap-2 px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 focus-within:ring-2 focus-within:ring-primary-500 focus-within:border-transparent">
           <span class="text-gray-400">🔍</span>
-          <input type="text" [(ngModel)]="vocabularySearchQuery" placeholder="Type to search your words…"
+          <input id="vocabulary-filter" type="text" [(ngModel)]="vocabularySearchQuery" placeholder="Type to search your words…"
             class="flex-1 bg-transparent outline-none text-gray-800 placeholder-gray-400" />
         </div>
       </div>
@@ -328,20 +327,23 @@
 
       <!-- Vocabulary Word List - Simple list view -->
       <div *ngIf="!vocabularyLoading && filteredVocabularyWords.length > 0" class="space-y-2">
-        <div *ngFor="let word of filteredVocabularyWords" (click)="viewWordDetails(word)"
-          class="px-4 py-3 bg-gray-50 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors duration-200 border border-gray-200 hover:border-primary-400 flex items-center justify-between gap-3">
-          <div class="min-w-0 flex-1">
+        <div *ngFor="let word of filteredVocabularyWords"
+          class="px-4 py-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center justify-between gap-3">
+          <button type="button" (click)="viewWordDetails(word)"
+            class="min-w-0 flex-1 text-left rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 transition-colors duration-200">
             <h3 class="text-lg font-semibold text-gray-800 truncate">{{ word.word }}</h3>
             <p *ngIf="getVocabularyMatchPreview(word) as matchPreview" class="text-xs text-gray-500 mt-1 truncate">
               {{ matchPreview }}
             </p>
-          </div>
-          <button (click)="toggleFavorite(word, $event)"
+          </button>
+          <button type="button" (click)="toggleFavorite(word)"
             class="w-9 h-9 rounded-full border flex items-center justify-center transition-colors duration-200"
             [ngClass]="word.isFavorite
               ? 'bg-yellow-100 border-yellow-300 text-yellow-600 hover:bg-yellow-200'
               : 'bg-white border-gray-300 text-gray-400 hover:bg-gray-100'"
-            [title]="word.isFavorite ? 'Remove from favorites' : 'Add to favorites'" aria-label="Toggle favorite">
+            [attr.aria-pressed]="word.isFavorite"
+            [attr.aria-label]="(word.isFavorite ? 'Remove ' : 'Add ') + word.word + (word.isFavorite ? ' from favorites' : ' to favorites')"
+            [title]="word.isFavorite ? 'Remove from favorites' : 'Add to favorites'">
             ★
           </button>
         </div>
