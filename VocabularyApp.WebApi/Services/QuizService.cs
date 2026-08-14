@@ -167,9 +167,53 @@ namespace VocabularyApp.WebApi.Services
 
       try
       {
-        var answerLookup = request.Answers
+        if (request.Answers == null)
+        {
+          return ServiceResult<QuizSubmitResponseDto>.Failure("Answers are required.");
+        }
+
+        var duplicateQuestionId = request.Answers
             .GroupBy(answer => answer.QuestionId)
-            .Select(group => group.First())
+            .FirstOrDefault(group => group.Count() > 1);
+        if (duplicateQuestionId != null)
+        {
+          return ServiceResult<QuizSubmitResponseDto>.Failure("Each quiz question may only be answered once.");
+        }
+
+        var sessionQuestionLookup = session.Questions
+            .ToDictionary(question => question.QuestionId);
+
+        foreach (var answer in request.Answers)
+        {
+          if (!sessionQuestionLookup.TryGetValue(answer.QuestionId, out var question))
+          {
+            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer does not belong to this quiz session.");
+          }
+
+          if (!question.Options.Any(option => option.OptionId == answer.SelectedOptionId))
+          {
+            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer contains an invalid option.");
+          }
+        }
+
+        var requiredUserWordIds = session.Questions
+            .Select(question => question.UserWordId)
+            .Distinct()
+            .ToList();
+        var ownedUserWords = await _db.UserWords
+            .Where(uw => requiredUserWordIds.Contains(uw.Id) && uw.UserId == userId)
+            .ToListAsync();
+        var ownedUserWordIds = ownedUserWords
+            .Select(uw => uw.Id)
+            .ToHashSet();
+
+        if (ownedUserWordIds.Count != requiredUserWordIds.Count ||
+            requiredUserWordIds.Any(id => !ownedUserWordIds.Contains(id)))
+        {
+          return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz vocabulary is no longer available.");
+        }
+
+        var answerLookup = request.Answers
             .ToDictionary(answer => answer.QuestionId, answer => answer.SelectedOptionId);
 
         var questionResults = new List<QuizQuestionResultDto>();
@@ -215,21 +259,9 @@ namespace VocabularyApp.WebApi.Services
 
         var attemptedAtUtc = DateTime.UtcNow;
         var persistedResults = new List<QuizResult>();
-        var skippedStaleQuestions = 0;
-        var validUserWordIdsList = await _db.UserWords
-            .Where(uw => uw.UserId == userId)
-            .Select(uw => uw.Id)
-            .ToListAsync();
-        var validUserWordIds = new HashSet<int>(validUserWordIdsList);
 
         foreach (var question in session.Questions)
         {
-          if (!validUserWordIds.Contains(question.UserWordId))
-          {
-            skippedStaleQuestions++;
-            continue;
-          }
-
           var hasAnswer = answerLookup.TryGetValue(question.QuestionId, out var selectedOptionId);
           var selectedOption = hasAnswer
               ? question.Options.FirstOrDefault(option => option.OptionId == selectedOptionId)
@@ -254,15 +286,6 @@ namespace VocabularyApp.WebApi.Services
         {
           _db.QuizResults.AddRange(persistedResults);
           await _db.SaveChangesAsync();
-        }
-
-        if (skippedStaleQuestions > 0)
-        {
-          _logger.LogWarning(
-              "Skipped {SkippedCount} stale quiz question result(s) for user {UserId} in session {SessionId} because UserWord references no longer existed.",
-              skippedStaleQuestions,
-              userId,
-              request.SessionId);
         }
 
         QuizSessions.TryRemove(request.SessionId, out _);

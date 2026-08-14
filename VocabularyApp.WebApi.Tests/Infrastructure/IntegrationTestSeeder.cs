@@ -87,7 +87,9 @@ public static class IntegrationTestSeeder
         int? preferredWordDefinitionId = null,
         bool isFavorite = false,
         int correctAnswers = 0,
-        int totalAttempts = 0)
+        int totalAttempts = 0,
+        DateTime? lastReviewedAt = null,
+        DateTime? lastCorrectAt = null)
     {
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -100,6 +102,8 @@ public static class IntegrationTestSeeder
             IsFavorite = isFavorite,
             CorrectAnswers = correctAnswers,
             TotalAttempts = totalAttempts,
+            LastReviewedAt = lastReviewedAt,
+            LastCorrectAt = lastCorrectAt,
             AddedAt = DateTime.UtcNow
         };
         context.UserWords.Add(userWord);
