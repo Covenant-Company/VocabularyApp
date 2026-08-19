@@ -207,6 +207,9 @@ namespace VocabularyApp.WebApi.Services
             .Select(uw => uw.Id)
             .ToHashSet();
 
+        var ownedUserWordsById = ownedUserWords
+            .ToDictionary(uw => uw.Id);
+
         if (ownedUserWordIds.Count != requiredUserWordIds.Count ||
             requiredUserWordIds.Any(id => !ownedUserWordIds.Contains(id)))
         {
@@ -217,7 +220,9 @@ namespace VocabularyApp.WebApi.Services
             .ToDictionary(answer => answer.QuestionId, answer => answer.SelectedOptionId);
 
         var questionResults = new List<QuizQuestionResultDto>();
+        var persistedResults = new List<QuizResult>();
         var correctAnswers = 0;
+        var attemptedAtUtc = DateTime.UtcNow;
 
         foreach (var question in session.Questions)
         {
@@ -233,6 +238,16 @@ namespace VocabularyApp.WebApi.Services
             correctAnswers++;
           }
 
+          var userWord = ownedUserWordsById[question.UserWordId];
+          userWord.TotalAttempts += 1;
+          userWord.LastReviewedAt = attemptedAtUtc;
+
+          if (isCorrect)
+          {
+            userWord.CorrectAnswers += 1;
+            userWord.LastCorrectAt = attemptedAtUtc;
+          }
+
           questionResults.Add(new QuizQuestionResultDto
           {
             QuestionId = question.QuestionId,
@@ -241,6 +256,19 @@ namespace VocabularyApp.WebApi.Services
             CorrectAnswer = correctOption.Text,
             SelectedAnswer = selectedOption?.Text,
             IsCorrect = isCorrect
+          });
+
+          persistedResults.Add(new QuizResult
+          {
+            UserId = userId,
+            UserWordId = question.UserWordId,
+            QuizSessionId = request.SessionId,
+            QuizType = QuizType.Definition,
+            IsCorrect = isCorrect,
+            UserAnswer = selectedOption?.Text,
+            CorrectAnswer = correctOption.Text,
+            ResponseTimeSeconds = 0,
+            AttemptedAt = attemptedAtUtc
           });
         }
 
@@ -256,31 +284,6 @@ namespace VocabularyApp.WebApi.Services
           ScorePercentage = scorePercentage,
           QuestionResults = questionResults
         };
-
-        var attemptedAtUtc = DateTime.UtcNow;
-        var persistedResults = new List<QuizResult>();
-
-        foreach (var question in session.Questions)
-        {
-          var hasAnswer = answerLookup.TryGetValue(question.QuestionId, out var selectedOptionId);
-          var selectedOption = hasAnswer
-              ? question.Options.FirstOrDefault(option => option.OptionId == selectedOptionId)
-              : null;
-          var correctOption = question.Options.First(option => option.OptionId == question.CorrectOptionId);
-
-          persistedResults.Add(new QuizResult
-          {
-            UserId = userId,
-            UserWordId = question.UserWordId,
-            QuizSessionId = request.SessionId,
-            QuizType = QuizType.Definition,
-            IsCorrect = hasAnswer && selectedOptionId == question.CorrectOptionId,
-            UserAnswer = selectedOption?.Text,
-            CorrectAnswer = correctOption.Text,
-            ResponseTimeSeconds = 0,
-            AttemptedAt = attemptedAtUtc
-          });
-        }
 
         if (persistedResults.Count > 0)
         {
