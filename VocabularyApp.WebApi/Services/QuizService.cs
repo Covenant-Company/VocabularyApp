@@ -207,9 +207,6 @@ namespace VocabularyApp.WebApi.Services
             .Select(uw => uw.Id)
             .ToHashSet();
 
-        var ownedUserWordsById = ownedUserWords
-            .ToDictionary(uw => uw.Id);
-
         if (ownedUserWordIds.Count != requiredUserWordIds.Count ||
             requiredUserWordIds.Any(id => !ownedUserWordIds.Contains(id)))
         {
@@ -221,6 +218,7 @@ namespace VocabularyApp.WebApi.Services
 
         var questionResults = new List<QuizQuestionResultDto>();
         var persistedResults = new List<QuizResult>();
+        var questionScores = new Dictionary<Guid, bool>();
         var correctAnswers = 0;
         var attemptedAtUtc = DateTime.UtcNow;
 
@@ -238,15 +236,7 @@ namespace VocabularyApp.WebApi.Services
             correctAnswers++;
           }
 
-          var userWord = ownedUserWordsById[question.UserWordId];
-          userWord.TotalAttempts += 1;
-          userWord.LastReviewedAt = attemptedAtUtc;
-
-          if (isCorrect)
-          {
-            userWord.CorrectAnswers += 1;
-            userWord.LastCorrectAt = attemptedAtUtc;
-          }
+          questionScores[question.QuestionId] = isCorrect;
 
           questionResults.Add(new QuizQuestionResultDto
           {
@@ -287,8 +277,50 @@ namespace VocabularyApp.WebApi.Services
 
         if (persistedResults.Count > 0)
         {
-          _db.QuizResults.AddRange(persistedResults);
-          await _db.SaveChangesAsync();
+          var executionStrategy = _db.Database.CreateExecutionStrategy();
+          await executionStrategy.ExecuteAsync(async () =>
+          {
+            _db.ChangeTracker.Clear();
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+
+            var transactionalUserWords = await _db.UserWords
+                .Where(uw => requiredUserWordIds.Contains(uw.Id) && uw.UserId == userId)
+                .ToListAsync();
+            if (transactionalUserWords.Count != requiredUserWordIds.Count)
+            {
+              throw new InvalidOperationException("Quiz vocabulary changed before persistence.");
+            }
+
+            var transactionalUserWordsById = transactionalUserWords
+                .ToDictionary(uw => uw.Id);
+            foreach (var question in session.Questions)
+            {
+              var userWord = transactionalUserWordsById[question.UserWordId];
+              userWord.TotalAttempts += 1;
+              userWord.LastReviewedAt = attemptedAtUtc;
+
+              if (questionScores[question.QuestionId])
+              {
+                userWord.CorrectAnswers += 1;
+                userWord.LastCorrectAt = attemptedAtUtc;
+              }
+            }
+
+            _db.QuizResults.AddRange(persistedResults.Select(result => new QuizResult
+            {
+              UserId = result.UserId,
+              UserWordId = result.UserWordId,
+              QuizSessionId = result.QuizSessionId,
+              QuizType = result.QuizType,
+              IsCorrect = result.IsCorrect,
+              UserAnswer = result.UserAnswer,
+              CorrectAnswer = result.CorrectAnswer,
+              ResponseTimeSeconds = result.ResponseTimeSeconds,
+              AttemptedAt = result.AttemptedAt
+            }));
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+          });
         }
 
         QuizSessions.TryRemove(request.SessionId, out _);
@@ -296,6 +328,7 @@ namespace VocabularyApp.WebApi.Services
       }
       catch (Exception ex)
       {
+        _db.ChangeTracker.Clear();
         _logger.LogError(ex, "Error submitting quiz for user {UserId}", userId);
         return ServiceResult<QuizSubmitResponseDto>.Failure("Failed to submit quiz.");
       }

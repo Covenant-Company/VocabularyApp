@@ -412,6 +412,64 @@ public sealed class QuizApiTests : QuizApiTestBase
             AssertLearningState(state, 4, 6, lastReviewedChanged: true, PreviousCorrectUtc, lastCorrectChanged: true));
     }
 
+    [Fact]
+    public async Task PersistenceFailureRollsBackResultsAndLearningStateAndSessionRemainsRetryable()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(
+            factory,
+            user.User.User.Id,
+            "rollback",
+            correctAnswers: 3,
+            totalAttempts: 5,
+            lastReviewedAt: PreviousReviewUtc,
+            lastCorrectAt: PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var submission = CreateCorrectSubmission(start, words);
+        var affectedIds = start.Questions
+            .Select(question => FindSeededWord(question, words).UserWordId)
+            .ToList();
+        var before = await LoadLearningStatesAsync(factory, affectedIds);
+
+        factory.QuizPersistenceFailure.Arm();
+        try
+        {
+            using var failed = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
+
+            Assert.Equal(HttpStatusCode.BadRequest, failed.StatusCode);
+            Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
+            AssertLearningStatesUnchanged(
+                before,
+                await LoadLearningStatesAsync(factory, affectedIds));
+        }
+        finally
+        {
+            factory.QuizPersistenceFailure.Disarm();
+        }
+
+        using var retry = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
+
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        var results = await LoadSessionResultsAsync(factory, start.SessionId);
+        Assert.Equal(start.QuestionCount, results.Count);
+        var afterRetry = await LoadLearningStatesAsync(factory, affectedIds);
+        Assert.All(afterRetry.Values, state =>
+            AssertLearningState(
+                state,
+                expectedCorrectAnswers: 4,
+                expectedTotalAttempts: 6,
+                lastReviewedChanged: true,
+                PreviousCorrectUtc,
+                lastCorrectChanged: true));
+        Assert.All(results, result =>
+        {
+            Assert.True(result.IsCorrect);
+            Assert.Equal(result.AttemptedAt, afterRetry[result.UserWordId].LastReviewedAt);
+            Assert.Equal(result.AttemptedAt, afterRetry[result.UserWordId].LastCorrectAt);
+        });
+    }
+
     [Theory]
     [InlineData(0, 0, null)]
     [InlineData(1, 1, 100d)]

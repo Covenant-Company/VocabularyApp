@@ -19,6 +19,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     private readonly SqliteConnection _connection;
 
     public ControllableDictionaryHandler DictionaryHandler { get; } = new();
+    public QuizPersistenceFailureInterceptor QuizPersistenceFailure { get; } = new();
 
     static VocabularyAppWebApplicationFactory()
     {
@@ -71,7 +72,9 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
             services.RemoveAll<ApplicationDbContext>();
             services.RemoveAll<DbContextOptions<ApplicationDbContext>>();
             services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlite(_connection));
+                options
+                    .UseSqlite(_connection)
+                    .AddInterceptors(QuizPersistenceFailure));
 
             services.RemoveAll<IWordService>();
             services.AddHttpClient<IWordService, WordService>()
