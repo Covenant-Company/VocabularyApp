@@ -165,6 +165,12 @@ namespace VocabularyApp.WebApi.Services
         return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session has expired. Please start a new quiz.");
       }
 
+      if (!session.TryBeginSubmission())
+      {
+        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz submission is already in progress.");
+      }
+
+      var submissionCompleted = false;
       try
       {
         if (request.Answers == null)
@@ -324,13 +330,32 @@ namespace VocabularyApp.WebApi.Services
         }
 
         QuizSessions.TryRemove(request.SessionId, out _);
+        submissionCompleted = true;
         return ServiceResult<QuizSubmitResponseDto>.Success(response);
+      }
+      catch (DbUpdateException ex) when (IsQuizSubmissionDuplicate(ex))
+      {
+        _db.ChangeTracker.Clear();
+        QuizSessions.TryRemove(request.SessionId, out _);
+        submissionCompleted = true;
+        _logger.LogWarning(
+            "Duplicate quiz submission rejected for user {UserId} and session {QuizSessionId}",
+            userId,
+            request.SessionId);
+        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz has already been submitted.");
       }
       catch (Exception ex)
       {
         _db.ChangeTracker.Clear();
         _logger.LogError(ex, "Error submitting quiz for user {UserId}", userId);
         return ServiceResult<QuizSubmitResponseDto>.Failure("Failed to submit quiz.");
+      }
+      finally
+      {
+        if (!submissionCompleted)
+        {
+          session.ReleaseSubmission();
+        }
       }
     }
 
@@ -394,6 +419,44 @@ namespace VocabularyApp.WebApi.Services
       return source.OrderBy(_ => Random.Shared.Next()).ToList();
     }
 
+    private static bool IsQuizSubmissionDuplicate(DbUpdateException exception)
+    {
+      const string indexName = "IX_QuizResults_UserId_QuizSessionId_UserWordId";
+
+      for (Exception? current = exception; current != null; current = current.InnerException)
+      {
+        var messageIdentifiesIndex = current.Message.Contains(
+            indexName,
+            StringComparison.OrdinalIgnoreCase);
+        var messageIdentifiesSqliteColumns =
+            current.Message.Contains("QuizResults.UserId", StringComparison.OrdinalIgnoreCase) &&
+            current.Message.Contains("QuizResults.QuizSessionId", StringComparison.OrdinalIgnoreCase) &&
+            current.Message.Contains("QuizResults.UserWordId", StringComparison.OrdinalIgnoreCase);
+
+        if (!messageIdentifiesIndex && !messageIdentifiesSqliteColumns)
+        {
+          continue;
+        }
+
+        var exceptionType = current.GetType();
+        if (exceptionType.FullName == "Microsoft.Data.SqlClient.SqlException")
+        {
+          var number = exceptionType.GetProperty("Number")?.GetValue(current) as int?;
+          return number is 2601 or 2627;
+        }
+
+        if (exceptionType.FullName == "Microsoft.Data.Sqlite.SqliteException")
+        {
+          var extendedErrorCode = exceptionType
+              .GetProperty("SqliteExtendedErrorCode")?
+              .GetValue(current) as int?;
+          return extendedErrorCode == 2067;
+        }
+      }
+
+      return false;
+    }
+
     private static void CleanupExpiredQuizSessions()
     {
       var now = DateTime.UtcNow;
@@ -429,10 +492,17 @@ namespace VocabularyApp.WebApi.Services
 
     private class QuizSessionState
     {
+      private int _submissionState;
+
       public Guid SessionId { get; set; }
       public int UserId { get; set; }
       public DateTime ExpiresAtUtc { get; set; }
       public List<QuizQuestionState> Questions { get; set; } = new();
+
+      public bool TryBeginSubmission() =>
+          Interlocked.CompareExchange(ref _submissionState, 1, 0) == 0;
+
+      public void ReleaseSubmission() => Volatile.Write(ref _submissionState, 0);
     }
   }
 }

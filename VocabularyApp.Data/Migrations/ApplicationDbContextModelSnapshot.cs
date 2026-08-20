@@ -186,6 +186,9 @@ namespace VocabularyApp.Data.Migrations
 
                     b.HasIndex("UserId", "QuizSessionId", "AttemptedAt");
 
+                    b.HasIndex("UserId", "QuizSessionId", "UserWordId")
+                        .IsUnique();
+
                     b.ToTable("QuizResults");
                 });
 

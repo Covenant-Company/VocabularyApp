@@ -470,6 +470,114 @@ public sealed class QuizApiTests : QuizApiTestBase
         });
     }
 
+    [Fact]
+    public async Task ConcurrentSubmissionsPersistOneLogicalResultAndAggregateUpdate()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(
+            factory,
+            user.User.User.Id,
+            "concurrent",
+            correctAnswers: 3,
+            totalAttempts: 5,
+            lastReviewedAt: PreviousReviewUtc,
+            lastCorrectAt: PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var submission = CreateCorrectSubmission(start, words);
+        var affectedIds = start.Questions
+            .Select(question => FindSeededWord(question, words).UserWordId)
+            .ToList();
+
+        factory.QuizSubmissionSynchronization.Arm();
+        var firstSubmission = user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
+        HttpResponseMessage? secondResponse = null;
+        HttpResponseMessage? firstResponse = null;
+        try
+        {
+            await factory.QuizSubmissionSynchronization
+                .WaitUntilBlockedAsync()
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            secondResponse = await user.Client
+                .PostAsJsonAsync("/api/quiz/submit", submission)
+                .WaitAsync(TimeSpan.FromSeconds(5));
+
+            factory.QuizSubmissionSynchronization.Release();
+            firstResponse = await firstSubmission.WaitAsync(TimeSpan.FromSeconds(5));
+
+            Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.BadRequest, secondResponse.StatusCode);
+        }
+        finally
+        {
+            factory.QuizSubmissionSynchronization.Release();
+            firstResponse?.Dispose();
+            secondResponse?.Dispose();
+        }
+
+        var results = await LoadSessionResultsAsync(factory, start.SessionId);
+        Assert.Equal(start.QuestionCount, results.Count);
+        Assert.Equal(
+            start.QuestionCount,
+            results.Select(result => result.UserWordId).Distinct().Count());
+
+        var after = await LoadLearningStatesAsync(factory, affectedIds);
+        Assert.All(after.Values, state =>
+            AssertLearningState(
+                state,
+                expectedCorrectAnswers: 4,
+                expectedTotalAttempts: 6,
+                lastReviewedChanged: true,
+                PreviousCorrectUtc,
+                lastCorrectChanged: true));
+        Assert.All(results, result =>
+        {
+            Assert.Equal(result.AttemptedAt, after[result.UserWordId].LastReviewedAt);
+            Assert.Equal(result.AttemptedAt, after[result.UserWordId].LastCorrectAt);
+        });
+    }
+
+    [Fact]
+    public async Task QuizResultSubmissionUniquenessRejectsDuplicateDatabaseRow()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "unique-index");
+        var start = await StartQuizAsync(user.Client, 1);
+
+        using var submissionResponse = await user.Client.PostAsJsonAsync(
+            "/api/quiz/submit",
+            CreateCorrectSubmission(start, words));
+        Assert.Equal(HttpStatusCode.OK, submissionResponse.StatusCode);
+
+        var persisted = Assert.Single(await LoadSessionResultsAsync(factory, start.SessionId));
+        var before = await LoadLearningStateAsync(factory, persisted.UserWordId);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            context.QuizResults.Add(new()
+            {
+                UserId = persisted.UserId,
+                UserWordId = persisted.UserWordId,
+                QuizSessionId = start.SessionId,
+                QuizType = VocabularyApp.Data.Models.QuizType.Definition,
+                IsCorrect = persisted.IsCorrect,
+                UserAnswer = persisted.UserAnswer,
+                CorrectAnswer = "Duplicate index test answer",
+                ResponseTimeSeconds = 0,
+                AttemptedAt = persisted.AttemptedAt
+            });
+
+            await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+        }
+
+        Assert.Single(await LoadSessionResultsAsync(factory, start.SessionId));
+        AssertLearningStateUnchanged(
+            before,
+            await LoadLearningStateAsync(factory, persisted.UserWordId));
+    }
+
     [Theory]
     [InlineData(0, 0, null)]
     [InlineData(1, 1, 100d)]
