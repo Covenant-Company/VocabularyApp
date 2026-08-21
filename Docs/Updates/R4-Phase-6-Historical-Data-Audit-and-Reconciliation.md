@@ -4,7 +4,7 @@
 
 Recommendation: **audit first, then conditionally reconcile**.
 
-No reconciliation operation is implemented in this phase. The target database has not been inspected, and repository evidence shows several ways in which surviving `QuizResult` rows may not represent complete or unambiguous lifetime history. Any data-changing reconciliation requires review of the audit output and separate explicit approval.
+A reconciliation script now exists for the explicitly approved development-database policy described below, but it has not been executed. Its default mode is preview-only, and actual execution still requires manual review, backup/recovery verification, and explicit approval. Repository evidence continues to show several ways in which surviving `QuizResult` rows may not represent complete lifetime history.
 
 ## What Can Be Reconstructed
 
@@ -73,18 +73,21 @@ The audit produces evidence; it does not choose an authoritative duplicate, dele
 
 ## Conditional Reconciliation Design
 
-Reconciliation is deferred pending audit review. If later approved, it must be a separate maintenance operation that:
+The reviewed development audit reported 83 surviving results across 44 `UserWord` rows, with no duplicate uniqueness groups, ownership mismatches, orphaned references, impossible counters, or other blocking structural anomalies. Reconciliation from owner-consistent surviving history was therefore approved for that development database. `R4-Phase-6-Historical-Quiz-Reconciliation.sql` implements the approved assignment-based operation, defaults to preview-only, and has not been run by Codex.
 
-- uses only an explicitly approved set of owner-consistent results;
-- applies an approved duplicate policy rather than silently counting or deleting duplicates;
+Execution remains manual and environment-specific. The reconciliation script:
+
+- derives values only from owner-consistent surviving results;
+- blocks rather than choosing or deleting duplicate rows;
+- blocks on ownership mismatches and orphaned result references;
 - assigns derived values instead of incrementing stored values;
-- defines how zero-result and irrecoverable-history rows are treated;
-- records the deployment cutoff and whether pre-cutoff values represent lifetime or forward-only accuracy;
-- captures before/after values and affected-row counts;
-- is run first on a restorable staging copy; and
+- leaves zero-history and irrecoverable-history `UserWord` rows untouched;
+- previews stored/derived values and reports before/update/after counts;
+- rolls back automatically in its default preview mode;
+- requires review on a restorable staging/development copy before any separately approved execution; and
 - is idempotent, with a second run changing zero rows.
 
-Until those decisions are approved, no reconciliation SQL or application code should be created or run.
+The script leaves zero-history `UserWord` rows untouched and blocks on duplicate result keys, ownership mismatches, or orphaned references. Approval for this development script does not authorize production reconciliation or establish that another database has clean history.
 
 ## Phase 5 Migration Readiness
 
@@ -139,4 +142,3 @@ Explicit approval is required before:
 - Duplicate cleanup may change both result history and the correct aggregate derivation.
 - R5 may later change `UserWord` identity and how histories are merged or reassigned.
 - Audit queries can be expensive on a large database; run on staging first and use the approved operational window for the target.
-
