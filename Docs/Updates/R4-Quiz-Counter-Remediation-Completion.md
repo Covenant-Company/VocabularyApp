@@ -4,7 +4,7 @@
 
 R4 is implementation-complete in source and has a human-verified backend baseline of 22 passing `QuizApiTests` and 152 passing backend tests. Valid submissions now update result history and per-word learning aggregates consistently, malformed submissions cause no mutation, persistence is atomic and retryable after failure, and sequential/concurrent duplicate submissions cannot double-count within the implemented protections.
 
-R4 is **not deployment-complete** for an existing target database. The Phase 5 unique-index migration exists in source but has not been applied. The Phase 5 and Phase 6 audits must be run and reviewed before that migration is approved. Historical reconciliation remains conditional and has not been performed.
+R4 is complete in source and at the development-database checkpoint. Development passed both audits, reconciled 44 `UserWord` rows with zero remaining mismatches, and applied the Phase 5 unique-index migration successfully. R4 is **not deployment-complete for staging or production**: each environment must complete its own approved audit, reconciliation/cutoff decision, migration, verification, and deployment procedure.
 
 ## 2. Original R4 Problem
 
@@ -123,7 +123,7 @@ Both historical audit files are read-only. Neither contains executable `INSERT`,
 
 ## 11. Historical Reconciliation Status
 
-No historical reconciliation was implemented or executed. No production history or learning aggregate was modified.
+The assignment-based reconciliation script was implemented and manually executed against the explicitly approved development database. It reconciled 44 `UserWord` rows from owner-consistent surviving history, and the post-check reported zero remaining mismatches. The repository copy was restored to `@ApplyChanges = 0`. Codex did not execute the script, and no staging or production history was modified.
 
 The approved recommendation remains: **audit first, then conditionally reconcile**. Reconciliation requires real audit output, an approved duplicate/anomaly policy, assignment-based idempotent implementation, staging verification, before-value capture, and explicit authorization.
 
@@ -186,7 +186,9 @@ Codex did not run these tests during Phase 7.
 
 Source implementation is complete: the model, migration source, and snapshot contain the unique index.
 
-Database deployment is incomplete: `20260819000000_AddQuizResultSubmissionUniqueness` has not been applied to an existing target database. R4 must not be described as fully deployed until the audits, approval gates, migration application, verification, compatible application deployment, and smoke checks are complete.
+Development database completion is verified by the human operator: `20260819000000_AddQuizResultSubmissionUniqueness` was applied successfully and migration output verified `IX_QuizResults_UserId_QuizSessionId_UserWordId`.
+
+Staging and production deployment remain incomplete. R4 must not be described as fully deployed in either environment until its audits, approval gates, migration application, index verification, compatible application deployment, and smoke checks are complete.
 
 ## 17. Deployment Prerequisites
 
@@ -221,11 +223,11 @@ After any approved cleanup, run both scripts again. The Phase 5 duplicate query 
 
 ## 19. Remaining Operational Actions
 
-- Run and approve both historical audits.
-- Decide explicitly between conditional reconciliation and forward-only cutoff semantics.
+- Repeat and approve both historical audits for staging and production.
+- Decide explicitly between conditional reconciliation and forward-only cutoff semantics in each remaining environment.
 - If necessary, design and approve duplicate cleanup; none exists in R4 source.
-- Validate and apply the Phase 5 migration through the approved environment sequence.
-- Verify index metadata and duplicate/different-key behavior on SQL Server.
+- Validate and apply the Phase 5 migration through each remaining approved environment sequence.
+- Verify index metadata and duplicate/different-key behavior on staging and production SQL Server.
 - Deploy the compatible application.
 - Run the backend regression commands and post-deployment checks.
 - Record audit results, approvals, migration execution, deployment version, cutoff, and smoke-test evidence.
@@ -240,7 +242,7 @@ After any approved cleanup, run both scripts again. The Phase 5 duplicate query 
 - Legacy `QuizSessionId` backfill used exact timestamps and does not prove original session boundaries.
 - Both quiz directions continue to use the existing `QuizType.Definition`, and response time remains zero; these pre-existing history-fidelity limitations were outside R4.
 - Current `UserWord` identity remains coupled to `PartOfSpeechId`; R5 owns that correction.
-- SQL Server target-provider migration and duplicate-conflict behavior still require approved deployment validation.
+- SQL Server migration and duplicate-conflict behavior were validated in development but still require approved staging/production validation.
 
 ## 21. Definition of Done
 
@@ -248,15 +250,15 @@ After any approved cleanup, run both scripts again. The Phase 5 duplicate query 
 |---|---|
 | New valid submissions keep per-word totals consistent with persisted results | Satisfied in source and verified integration tests |
 | Results and aggregate changes commit or roll back together | Satisfied in source and rollback coverage |
-| Sequential and concurrent submissions are idempotent | Satisfied in source/tests within current architecture; durable cross-instance protection depends on applying the migration |
+| Sequential and concurrent submissions are idempotent | Satisfied in source/tests; durable cross-instance index is applied in development and pending in staging/production |
 | Rule A is documented and implemented | Satisfied |
 | Validation and ownership failures produce zero mutation | Satisfied in source/tests |
 | Correctness, malformed input, rollback, retry, concurrency, and uniqueness have integration coverage | Satisfied |
-| Historical aggregates are reconciled | Intentionally deferred pending audit and approval |
-| Phase 5 uniqueness migration is deployed to the target | Outstanding operational action |
+| Historical aggregates are reconciled | Completed for the approved development database; staging/production remain conditional |
+| Phase 5 uniqueness migration is deployed | Completed in development; outstanding for staging/production |
 | R5 identity and R12 persisted sessions | Intentionally deferred to their respective remediations |
 
-R4 is implementation-complete. It becomes deployment-complete only after the outstanding database and operational steps are performed and recorded.
+R4 is implementation-complete and development-database-complete. It becomes staging/production deployment-complete only after the outstanding environment-specific database and operational steps are performed and recorded.
 
 ## 22. Files Changed Across R4
 
@@ -272,15 +274,17 @@ The completed R4 work is represented primarily by:
 - `VocabularyApp.WebApi.Tests/Infrastructure/QuizSubmissionSynchronizationInterceptor.cs`
 - `docs/Updates/R4-Phase-5-Quiz-Result-Duplicate-Audit.sql`
 - `docs/Updates/R4-Phase-6-Historical-Quiz-Audit.sql`
+- `docs/Updates/R4-Phase-6-Historical-Quiz-Reconciliation.sql`
 - `docs/Updates/R4-Phase-6-Historical-Data-Audit-and-Reconciliation.md`
 - `docs/Updates/R4-Quiz-Counter-Remediation-Implementation-Plan.md`
 - `docs/Updates/R4-Quiz-Counter-Remediation-Completion.md`
+- `docs/Updates/R4-Quiz-Counter-Remediation-Final-Review.md`
 
 No R5, R7, R8, R12, mastery, review-scheduling, progress-dashboard, or Angular implementation was introduced by R4.
 
 ## 23. Final Recommendation
 
-Accept R4 as **implementation-complete but not deployment-complete**.
+Accept R4 as **implementation-complete and development-database-complete, but not staging/production deployment-complete**.
 
 Proceed through the documented audit and migration approval sequence. Do not apply the unique index if duplicate groups exist, do not reconcile history without an approved anomaly policy, and use a documented forward-only cutoff if historical completeness cannot be established. Mark R4 fully deployed only after the target migration, index verification, compatible application deployment, regression tests, and smoke checks are complete.
 
@@ -296,4 +300,3 @@ Proceed through the documented audit and migration approval sequence. Do not app
 - A controlled duplicate key is rejected while different valid keys remain accepted.
 - Cross-user and malformed submissions remain mutation-free.
 - Application logs contain no unexpected persistence, transaction, or uniqueness errors.
-

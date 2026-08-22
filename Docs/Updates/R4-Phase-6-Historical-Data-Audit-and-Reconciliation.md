@@ -4,7 +4,7 @@
 
 Recommendation: **audit first, then conditionally reconcile**.
 
-A reconciliation script now exists for the explicitly approved development-database policy described below, but it has not been executed. Its default mode is preview-only, and actual execution still requires manual review, backup/recovery verification, and explicit approval. Repository evidence continues to show several ways in which surviving `QuizResult` rows may not represent complete lifetime history.
+A reconciliation script now exists for the explicitly approved development-database policy described below. The human operator ran it against development: 44 `UserWord` rows were reconciled and the post-check reported zero remaining mismatches. The repository copy was then restored to its preview-safe `@ApplyChanges = 0` default. Execution against any other environment still requires its own audit, manual review, backup/recovery verification, and explicit approval. Repository evidence continues to show several ways in which surviving `QuizResult` rows may not represent complete lifetime history.
 
 ## What Can Be Reconstructed
 
@@ -73,7 +73,7 @@ The audit produces evidence; it does not choose an authoritative duplicate, dele
 
 ## Conditional Reconciliation Design
 
-The reviewed development audit reported 83 surviving results across 44 `UserWord` rows, with no duplicate uniqueness groups, ownership mismatches, orphaned references, impossible counters, or other blocking structural anomalies. Reconciliation from owner-consistent surviving history was therefore approved for that development database. `R4-Phase-6-Historical-Quiz-Reconciliation.sql` implements the approved assignment-based operation, defaults to preview-only, and has not been run by Codex.
+The reviewed development audit reported 83 surviving results across 44 `UserWord` rows, with no duplicate uniqueness groups, ownership mismatches, orphaned references, impossible counters, or other blocking structural anomalies. Reconciliation from owner-consistent surviving history was therefore approved for that development database. The human operator ran `R4-Phase-6-Historical-Quiz-Reconciliation.sql`, reconciled 44 rows, and verified zero remaining mismatches. Codex did not execute it. The repository script again defaults to preview-only.
 
 Execution remains manual and environment-specific. The reconciliation script:
 
@@ -91,7 +91,7 @@ The script leaves zero-history `UserWord` rows untouched and blocks on duplicate
 
 ## Phase 5 Migration Readiness
 
-`20260819000000_AddQuizResultSubmissionUniqueness` is not currently proven safe for an existing database. Source correctness is insufficient; target data must pass review.
+`20260819000000_AddQuizResultSubmissionUniqueness` was audited and applied successfully to the development database. That result does not establish readiness for staging or production: source correctness is insufficient, and each target database must pass its own review.
 
 At minimum:
 
@@ -114,7 +114,7 @@ The migration must never be used as a discovery mechanism: allowing index creati
 5. Run both scripts against the intended target using the approved read-only workflow.
 6. Preserve and review the outputs without answer text or other unnecessary sensitive data.
 7. If blocking or ambiguous anomalies exist, stop. Approve a cleanup, conditional reconciliation, or forward-only policy separately.
-8. If reconciliation is approved, implement and test it separately, capture before-values, run it twice in staging, and verify the second run is a no-op.
+8. If reconciliation is approved for that environment, preview and review the assignment-based script, capture before-values, execute it through the approved workflow, and verify a second preview reports zero changes.
 9. Re-run the audits and require zero duplicate uniqueness groups.
 10. Apply the Phase 5 uniqueness migration in an approved non-production environment and verify the index and duplicate-key behavior.
 11. Apply the approved database change and deploy the compatible application in the controlled production sequence.
