@@ -119,7 +119,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-app.MapFallbackToFile("{*path:nonfile}", "index.html");
+app.MapFallbackToFile("{*path:nonfile}", "index.html").AllowAnonymous();
 
 app.Run();
 
