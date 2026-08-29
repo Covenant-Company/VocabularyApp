@@ -44,7 +44,20 @@ namespace VocabularyApp.WebApi.Controllers
                 var result = await _wordService.LookupWordAsync(word, userId);
                 if (!result.IsSuccess)
                 {
-                    return NotFound(new { success = false, error = result.Message ?? "Word not found." });
+                    var error = new
+                    {
+                        success = false,
+                        error = result.Message ?? "Word lookup failed."
+                    };
+
+                    return result.FailureType switch
+                    {
+                        ServiceFailureType.NotFound => NotFound(error),
+                        ServiceFailureType.ServiceUnavailable => StatusCode(
+                            StatusCodes.Status503ServiceUnavailable,
+                            error),
+                        _ => BadRequest(error)
+                    };
                 }
                 return Ok(new { success = true, data = result.Data });
             }

@@ -135,9 +135,9 @@ public sealed class R3SecurityContractApiTests
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = $"anonymous-lookup-{Guid.NewGuid():N}";
         factory.DictionaryHandler.RegisterJson(
-            $"/api/v2/entries/en/{Uri.EscapeDataString(wordText)}",
+            $"/words/{Uri.EscapeDataString(wordText)}",
             HttpStatusCode.OK,
-            "[]");
+            "{}");
         using var client = factory.CreateClient();
 
         using var response = await client.GetAsync($"/api/words/lookup/{wordText}");

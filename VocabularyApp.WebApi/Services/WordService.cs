@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
 using VocabularyApp.Data;
 using VocabularyApp.Data.Models;
 using VocabularyApp.WebApi.DTOs;
@@ -58,70 +61,113 @@ namespace VocabularyApp.WebApi.Services
                 }
 
                 // 2) Fetch from external dictionary API and persist
-                var apiUrl = $"https://api.dictionaryapi.dev/api/v2/entries/en/{Uri.EscapeDataString(normalized)}";
-                DictionaryApiResponse[]? apiData = null;
+                var apiUrl = $"words/{Uri.EscapeDataString(normalized)}";
+                WordsApiResponse? apiData;
                 try
                 {
-                    apiData = await _http.GetFromJsonAsync<DictionaryApiResponse[]>(apiUrl);
+                    using var providerResponse = await _http.GetAsync(apiUrl);
+                    if (providerResponse.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        return ServiceResult<object>.Failure(
+                            "No definitions found.",
+                            ServiceFailureType.NotFound);
+                    }
+
+                    if (!providerResponse.IsSuccessStatusCode)
+                    {
+                        _logger.LogWarning(
+                            "WordsAPI returned status {StatusCode} for '{Word}'",
+                            (int)providerResponse.StatusCode,
+                            normalized);
+                        return DictionaryUnavailable();
+                    }
+
+                    apiData = await providerResponse.Content
+                        .ReadFromJsonAsync<WordsApiResponse>();
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is HttpRequestException
+                                           or TaskCanceledException
+                                           or JsonException
+                                           or NotSupportedException)
                 {
-                    _logger.LogWarning(ex, "External dictionary API call failed for '{Word}'", normalized);
+                    _logger.LogWarning(ex, "WordsAPI call failed for '{Word}'", normalized);
+                    return DictionaryUnavailable();
                 }
 
-                if (apiData == null || apiData.Length == 0)
+                if (apiData == null)
                 {
-                    return ServiceResult<object>.Failure("No definitions found.");
+                    _logger.LogWarning("WordsAPI returned an empty response for '{Word}'", normalized);
+                    return DictionaryUnavailable();
                 }
 
-                var first = apiData[0];
-
-                var providerWord = first.Word?.Trim();
+                var providerWord = apiData.Word?.Trim();
                 if (string.IsNullOrWhiteSpace(providerWord))
                 {
-                    return ServiceResult<object>.Failure(
-                        "The dictionary provider returned invalid canonical word data.");
+                    _logger.LogWarning("WordsAPI returned invalid canonical word data for '{Word}'", normalized);
+                    return DictionaryUnavailable();
                 }
 
-                // Extract audio URL from phonetics array
-                var audioUrl = first.Phonetics?
-                    .FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Audio))?.Audio;
+                var partsOfSpeech = await _db.PartsOfSpeech.ToListAsync();
+                var mappedDefinitions = apiData.Results
+                    .Where(result => !string.IsNullOrWhiteSpace(result.Definition))
+                    .Select(result => new
+                    {
+                        Result = result,
+                        PartOfSpeech = partsOfSpeech.FirstOrDefault(pos =>
+                            string.Equals(pos.Name, result.PartOfSpeech?.Trim(),
+                                StringComparison.OrdinalIgnoreCase))
+                    })
+                    .Where(mapped => mapped.PartOfSpeech != null)
+                    .ToList();
+
+                foreach (var unknown in apiData.Results
+                    .Where(result => !string.IsNullOrWhiteSpace(result.Definition)
+                                     && !partsOfSpeech.Any(pos => string.Equals(
+                                         pos.Name,
+                                         result.PartOfSpeech?.Trim(),
+                                         StringComparison.OrdinalIgnoreCase))))
+                {
+                    _logger.LogWarning(
+                        "Skipping WordsAPI definition for '{Word}' with unsupported part of speech '{PartOfSpeech}'",
+                        providerWord,
+                        unknown.PartOfSpeech);
+                }
+
+                if (mappedDefinitions.Count == 0)
+                {
+                    _logger.LogWarning("WordsAPI returned no usable definitions for '{Word}'", normalized);
+                    return DictionaryUnavailable();
+                }
+
+                var pronunciation = apiData.Pronunciation
+                    .FirstOrDefault(pair => string.Equals(pair.Key, "all", StringComparison.OrdinalIgnoreCase))
+                    .Value
+                    ?? apiData.Pronunciation.Values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
                 // Create canonical Word
                 var newWord = new Word
                 {
                     Text = providerWord,
-                    Pronunciation = first.Phonetic,
-                    AudioUrl = audioUrl
+                    Pronunciation = pronunciation,
+                    AudioUrl = null
                 };
                 _db.Words.Add(newWord);
-                await _db.SaveChangesAsync();
 
                 // Insert definitions
                 int order = 1;
-                foreach (var meaning in first.Meanings)
+                foreach (var mapped in mappedDefinitions)
                 {
-                    // Map part of speech
-                    var posName = (meaning.PartOfSpeech ?? "").Trim();
-                    var pos = await _db.PartsOfSpeech.FirstOrDefaultAsync(p => p.Name.ToLower() == posName.ToLower());
-                    if (pos == null)
+                    var wd = new WordDefinition
                     {
-                        // fallback to Noun if not matched
-                        pos = await _db.PartsOfSpeech.FirstOrDefaultAsync(p => p.Name == "Noun");
-                    }
-
-                    foreach (var def in meaning.Definitions)
-                    {
-                        var wd = new WordDefinition
-                        {
-                            WordId = newWord.Id,
-                            PartOfSpeechId = pos?.Id ?? 1,
-                            Definition = def.DefinitionText,
-                            Example = def.Example,
-                            DisplayOrder = order++
-                        };
-                        _db.WordDefinitions.Add(wd);
-                    }
+                        Word = newWord,
+                        PartOfSpeechId = mapped.PartOfSpeech!.Id,
+                        Definition = mapped.Result.Definition!.Trim(),
+                        Example = mapped.Result.Examples
+                            .FirstOrDefault(example => !string.IsNullOrWhiteSpace(example))?
+                            .Trim(),
+                        DisplayOrder = order++
+                    };
+                    _db.WordDefinitions.Add(wd);
                 }
 
                 await _db.SaveChangesAsync();
@@ -156,6 +202,11 @@ namespace VocabularyApp.WebApi.Services
                 return ServiceResult<object>.Failure("Internal server error");
             }
         }
+
+        private static ServiceResult<object> DictionaryUnavailable() =>
+            ServiceResult<object>.Failure(
+                "Dictionary service is temporarily unavailable. Please try again.",
+                ServiceFailureType.ServiceUnavailable);
 
         public async Task<ServiceResult<object>> AddToVocabularyAsync(int userId, AddWordRequest request)
         {

@@ -8,14 +8,19 @@ public sealed class ControllableDictionaryHandler : HttpMessageHandler
 {
     private readonly ConcurrentDictionary<string, StubResponse> _responses = new();
     private readonly ConcurrentQueue<Uri> _requests = new();
+    private readonly ConcurrentQueue<string?> _apiKeys = new();
 
     public IReadOnlyCollection<Uri> Requests => _requests.ToArray();
+    public IReadOnlyCollection<string?> ApiKeys => _apiKeys.ToArray();
 
     public void RegisterJson(
         string absolutePath,
         HttpStatusCode statusCode,
         string json) =>
         _responses[absolutePath] = new StubResponse(statusCode, json);
+
+    public void RegisterException(string absolutePath, Exception exception) =>
+        _responses[absolutePath] = new StubResponse(null, null, exception);
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -24,6 +29,9 @@ public sealed class ControllableDictionaryHandler : HttpMessageHandler
         var requestUri = request.RequestUri
             ?? throw new InvalidOperationException("Dictionary request did not contain a URI.");
         _requests.Enqueue(requestUri);
+        _apiKeys.Enqueue(request.Headers.TryGetValues("X-RapidAPI-Key", out var values)
+            ? values.SingleOrDefault()
+            : null);
 
         if (!_responses.TryGetValue(requestUri.AbsolutePath, out var response))
         {
@@ -31,12 +39,20 @@ public sealed class ControllableDictionaryHandler : HttpMessageHandler
                 $"Unexpected outbound dictionary request during an integration test: {request.Method} {requestUri}");
         }
 
-        return Task.FromResult(new HttpResponseMessage(response.StatusCode)
+        if (response.Exception is not null)
         {
-            Content = new StringContent(response.Json, Encoding.UTF8, "application/json"),
+            return Task.FromException<HttpResponseMessage>(response.Exception);
+        }
+
+        return Task.FromResult(new HttpResponseMessage(response.StatusCode!.Value)
+        {
+            Content = new StringContent(response.Json!, Encoding.UTF8, "application/json"),
             RequestMessage = request
         });
     }
 
-    private sealed record StubResponse(HttpStatusCode StatusCode, string Json);
+    private sealed record StubResponse(
+        HttpStatusCode? StatusCode,
+        string? Json,
+        Exception? Exception = null);
 }

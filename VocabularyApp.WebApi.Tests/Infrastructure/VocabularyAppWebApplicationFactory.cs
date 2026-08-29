@@ -7,6 +7,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using VocabularyApp.Data;
 using VocabularyApp.WebApi.Configuration;
 using VocabularyApp.WebApi.Services;
@@ -52,6 +53,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
 
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
@@ -64,6 +66,9 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
                 ["JwtSettings:Audience"] = TestJwtSettings.Audience,
                 ["JwtSettings:ExpirationMinutes"] =
                     TestJwtSettings.ExpirationMinutes.ToString(CultureInfo.InvariantCulture),
+                ["WordsApi:BaseUrl"] = "https://wordsapiv1.p.rapidapi.com/",
+                ["WordsApi:Host"] = "wordsapiv1.p.rapidapi.com",
+                ["WordsApi:ApiKey"] = "integration-test-words-api-key",
                 ["Cors:AllowedOrigins:0"] = "https://integration-tests.example"
             });
         });

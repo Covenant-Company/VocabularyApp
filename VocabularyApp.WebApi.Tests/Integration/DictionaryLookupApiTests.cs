@@ -15,15 +15,10 @@ public sealed class DictionaryLookupApiTests
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = UniqueWord("cached");
-        await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
-            factory, wordText, "Cached definition");
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
-        var client = authenticated.Client;
-
-        using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
+        await IntegrationTestSeeder.SeedWordWithDefinitionAsync(factory, wordText, "Cached definition");
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
         var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
-
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.True(lookup.WasFoundInCache);
         Assert.Equal(wordText, lookup.Word?.Text);
@@ -31,156 +26,142 @@ public sealed class DictionaryLookupApiTests
     }
 
     [Fact]
-    public async Task CacheMissUsesConfiguredProviderAndPersistsMappedDefinition()
+    public async Task CacheMissUsesWordsApiAndPersistsMappedDefinition()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = UniqueWord("provider");
-        RegisterProviderResponse(
-            factory,
-            wordText,
-            HttpStatusCode.OK,
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK,
             ProviderJson(wordText, "verb", "Provider definition"));
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
-        var client = authenticated.Client;
-
-        using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
         var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
-
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.False(lookup.WasFoundInCache);
         Assert.Equal(wordText, lookup.Word?.Text);
         Assert.Single(factory.DictionaryHandler.Requests);
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var persisted = await context.Words
-            .Include(word => word.WordDefinitions)
+        var persisted = await context.Words.Include(word => word.WordDefinitions)
             .SingleAsync(word => word.Text == wordText);
-        Assert.Collection(
-            persisted.WordDefinitions,
-            definition => Assert.Equal("Provider definition", definition.Definition));
+        Assert.Collection(persisted.WordDefinitions, definition =>
+        {
+            Assert.Equal("Provider definition", definition.Definition);
+            Assert.Equal("Provider example", definition.Example);
+        });
     }
 
     [Fact]
-    public async Task ProviderNotFoundMapsToCurrentNotFoundContractWithoutPersistence()
+    public async Task ProviderNotFoundReturnsNotFoundWithoutPersistence()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         var wordText = UniqueWord("not-found");
         RegisterProviderResponse(factory, wordText, HttpStatusCode.NotFound, "{}");
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
-        var client = authenticated.Client;
-
-        using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
-
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Single(factory.DictionaryHandler.Requests);
-        using var scope = factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
-    }
-
-    [Fact]
-    public async Task ProviderServerFailureMapsToCurrentNotFoundContractWithoutPersistence()
-    {
-        using var factory = new VocabularyAppWebApplicationFactory();
-        var wordText = UniqueWord("provider-error");
-        RegisterProviderResponse(factory, wordText, HttpStatusCode.InternalServerError, "{}");
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
-        var client = authenticated.Client;
-
-        using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Single(factory.DictionaryHandler.Requests);
-        using var scope = factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
-    }
-
-    [Fact]
-    public async Task UnknownProviderPartOfSpeechFallsBackToNoun()
-    {
-        using var factory = new VocabularyAppWebApplicationFactory();
-        var wordText = UniqueWord("unknown-pos");
-        RegisterProviderResponse(
-            factory,
-            wordText,
-            HttpStatusCode.OK,
-            ProviderJson(wordText, "unmapped-provider-pos", "Fallback definition"));
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
-        var client = authenticated.Client;
-
-        using var response = await client.GetAsync($"/api/words/lookup/{wordText}");
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var scope = factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var partOfSpeech = await context.WordDefinitions
-            .Where(definition => definition.Word.Text == wordText)
-            .Select(definition => definition.PartOfSpeech.Name)
-            .SingleAsync();
-        Assert.Equal("Noun", partOfSpeech);
+        await AssertNotPersisted(factory, wordText);
     }
 
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    [InlineData("   ")]
-    public async Task InvalidProviderCanonicalWordDoesNotFallBackToCallerInputOrPersist(
-        string? providerWord)
+    [InlineData(HttpStatusCode.TooManyRequests)]
+    [InlineData(HttpStatusCode.InternalServerError)]
+    [InlineData(HttpStatusCode.Unauthorized)]
+    [InlineData(HttpStatusCode.Forbidden)]
+    public async Task ProviderFailuresReturnServiceUnavailable(HttpStatusCode statusCode)
     {
         using var factory = new VocabularyAppWebApplicationFactory();
-        var lookupTerm = UniqueWord("invalid-provider-word");
-        RegisterProviderResponse(
-            factory,
-            lookupTerm,
-            HttpStatusCode.OK,
-            ProviderJson(providerWord, "noun", "Provider definition"));
-        using var authenticated = await ApiTestClientHelper
-            .RegisterAndCreateAuthenticatedClientAsync(factory);
+        var wordText = UniqueWord("provider-failure");
+        RegisterProviderResponse(factory, wordText, statusCode, "{}");
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.Contains("temporarily unavailable", await response.Content.ReadAsStringAsync());
+        await AssertNotPersisted(factory, wordText);
+    }
 
-        using var response = await authenticated.Client.GetAsync(
-            $"/api/words/lookup/{lookupTerm}");
+    [Fact]
+    public async Task ProviderNetworkFailureReturnsServiceUnavailable()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("network-error");
+        factory.DictionaryHandler.RegisterException(
+            ProviderPath(wordText), new HttpRequestException("Simulated network failure."));
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        await AssertNotPersisted(factory, wordText);
+    }
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.Single(factory.DictionaryHandler.Requests);
-        using var scope = factory.Services.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.False(await context.Words.AnyAsync(word => word.Text == lookupTerm));
-        Assert.False(await context.WordDefinitions.AnyAsync(
-            definition => definition.Definition == "Provider definition"));
+    [Fact]
+    public async Task ProviderTimeoutReturnsServiceUnavailable()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("timeout");
+        factory.DictionaryHandler.RegisterException(
+            ProviderPath(wordText), new TaskCanceledException("Simulated provider timeout."));
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        await AssertNotPersisted(factory, wordText);
+    }
+
+    [Theory]
+    [InlineData("{not-json")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public async Task MalformedOrEmptyProviderResponseReturnsServiceUnavailable(string json)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("malformed");
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK, json);
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        await AssertNotPersisted(factory, wordText);
+    }
+
+    [Fact]
+    public async Task UnknownPartOfSpeechIsNotMisclassifiedAsNoun()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("unknown-pos");
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK,
+            ProviderJson(wordText, "unmapped-provider-pos", "Definition"));
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        await AssertNotPersisted(factory, wordText);
+    }
+
+    [Fact]
+    public async Task ApiKeyIsSentToProviderAndNeverReturnedToClient()
+    {
+        const string apiKey = "integration-test-words-api-key";
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("secret-boundary");
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK,
+            ProviderJson(wordText, "noun", "Safe definition"));
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(apiKey, factory.DictionaryHandler.ApiKeys);
+        Assert.DoesNotContain(apiKey, body, StringComparison.Ordinal);
     }
 
     private static void RegisterProviderResponse(
-        VocabularyAppWebApplicationFactory factory,
-        string word,
-        HttpStatusCode statusCode,
-        string json) =>
-        factory.DictionaryHandler.RegisterJson(
-            $"/api/v2/entries/en/{Uri.EscapeDataString(word)}",
-            statusCode,
-            json);
+        VocabularyAppWebApplicationFactory factory, string word,
+        HttpStatusCode statusCode, string json) =>
+        factory.DictionaryHandler.RegisterJson(ProviderPath(word), statusCode, json);
+
+    private static string ProviderPath(string word) => $"/words/{Uri.EscapeDataString(word)}";
 
     private static string ProviderJson(string? word, string partOfSpeech, string definition) =>
-        JsonSerializer.Serialize(new[]
+        JsonSerializer.Serialize(new
         {
-            new
-            {
-                word,
-                phonetic = $"/{word}/",
-                phonetics = Array.Empty<object>(),
-                meanings = new[]
-                {
-                    new
-                    {
-                        partOfSpeech,
-                        definitions = new[] { new { definition, example = "Provider example" } }
-                    }
-                }
-            }
+            word,
+            pronunciation = new Dictionary<string, string> { ["all"] = $"/{word}/" },
+            results = new[] { new { partOfSpeech, definition, examples = new[] { "Provider example" } } }
         });
 
     private static T ReadData<T>(string json)
@@ -189,6 +170,14 @@ public sealed class DictionaryLookupApiTests
         return document.RootElement.GetProperty("data").Deserialize<T>(
             new JsonSerializerOptions(JsonSerializerDefaults.Web))
             ?? throw new InvalidOperationException("API response data was null.");
+    }
+
+    private static async Task AssertNotPersisted(
+        VocabularyAppWebApplicationFactory factory, string wordText)
+    {
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await context.Words.AnyAsync(word => word.Text == wordText));
     }
 
     private static string UniqueWord(string prefix) => $"{prefix}-{Guid.NewGuid():N}";

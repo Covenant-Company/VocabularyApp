@@ -50,7 +50,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-builder.Services.AddScoped<IWordService, WordService>();
 builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<JwtHelper>();
@@ -58,8 +57,23 @@ builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSingleton<ILegacyPasswordVerifier, LegacyPasswordVerifier>();
 builder.Services.AddSingleton<IPasswordService, PasswordService>();
 
-builder.Services.AddHttpClient<IWordService, WordService>();
-builder.Services.AddHttpClient();
+builder.Services.AddHttpClient<IWordService, WordService>(client =>
+{
+    var baseUrl = builder.Configuration["WordsApi:BaseUrl"]
+        ?? "https://wordsapiv1.p.rapidapi.com/";
+    var apiKey = builder.Configuration["WordsApi:ApiKey"];
+    var host = builder.Configuration["WordsApi:Host"]
+        ?? "wordsapiv1.p.rapidapi.com";
+
+    client.BaseAddress = new Uri(baseUrl);
+    client.Timeout = TimeSpan.FromSeconds(10);
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    client.DefaultRequestHeaders.Add("X-RapidAPI-Host", host);
+    if (!string.IsNullOrWhiteSpace(apiKey))
+    {
+        client.DefaultRequestHeaders.Add("X-RapidAPI-Key", apiKey);
+    }
+});
 
 builder.Services.AddControllers();
 
