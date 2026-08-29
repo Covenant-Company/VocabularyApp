@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using VocabularyApp.Data;
+using VocabularyApp.Data.Models;
 using VocabularyApp.WebApi.DTOs;
 using VocabularyApp.WebApi.Models;
 using VocabularyApp.WebApi.Tests.Infrastructure;
@@ -93,7 +94,7 @@ public sealed class VocabularyOwnershipApiTests
     }
 
     [Fact]
-    public async Task DuplicateCurrentLogicalSaveIsIdempotentForSamePartOfSpeech()
+    public async Task DuplicateCanonicalSaveIsIdempotentAcrossPartsOfSpeech()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
@@ -101,19 +102,242 @@ public sealed class VocabularyOwnershipApiTests
             factory, UniqueWord("duplicate"), "Duplicate definition");
         var wordText = await GetWordTextAsync(factory, word.WordId);
 
-        using var first = await AddVocabularyAsync(user.Client, wordText, "Noun");
-        using var second = await AddVocabularyAsync(user.Client, wordText, "Noun");
+        var verbDefinitionId = await IntegrationTestSeeder.SeedDefinitionAsync(
+            factory, word.WordId, "Verb definition", "Verb");
+        using var first = await user.Client.PostAsJsonAsync(
+            "/api/words/vocabulary/add",
+            new AddWordRequest
+            {
+                Word = wordText,
+                PartOfSpeech = "Noun",
+                PreferredWordDefinitionId = word.WordDefinitionId
+            });
+        var firstEnvelope = await first.Content.ReadFromJsonAsync<AddVocabularyEnvelope>();
+        using var second = await user.Client.PostAsJsonAsync(
+            "/api/words/vocabulary/add",
+            new AddWordRequest
+            {
+                Word = wordText,
+                PartOfSpeech = "Verb",
+                PreferredWordDefinitionId = verbDefinitionId
+            });
+        var secondEnvelope = await second.Content.ReadFromJsonAsync<AddVocabularyEnvelope>();
 
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        Assert.NotNull(firstEnvelope?.Data);
+        Assert.NotNull(secondEnvelope?.Data);
+        Assert.False(firstEnvelope.Data.AlreadyExisted);
+        Assert.True(secondEnvelope.Data.AlreadyExisted);
+        Assert.Equal(firstEnvelope.Data.UserWordId, secondEnvelope.Data.UserWordId);
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        Assert.Equal(
-            1,
-            await context.UserWords.CountAsync(candidate =>
-                candidate.UserId == user.User.User.Id &&
-                candidate.WordId == word.WordId &&
-                candidate.PartOfSpeechId == word.PartOfSpeechId));
+        var persisted = await context.UserWords.SingleAsync(candidate =>
+            candidate.UserId == user.User.User.Id && candidate.WordId == word.WordId);
+        Assert.Equal(word.PartOfSpeechId, persisted.PartOfSpeechId);
+        Assert.Equal(word.WordDefinitionId, persisted.PreferredWordDefinitionId);
+    }
+
+    [Fact]
+    public async Task DifferentUsersCanSaveTheSameCanonicalWord()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var users = await ApiTestClientHelper.CreateTwoAuthenticatedUsersAsync(factory);
+        var word = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("shared-word"), "Shared definition");
+        var wordText = await GetWordTextAsync(factory, word.WordId);
+
+        using var responseA = await AddVocabularyAsync(users.UserA.Client, wordText, "Noun");
+        using var responseB = await AddVocabularyAsync(users.UserB.Client, wordText, "Noun");
+
+        Assert.Equal(HttpStatusCode.OK, responseA.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, responseB.StatusCode);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(2, await context.UserWords.CountAsync(item => item.WordId == word.WordId));
+    }
+
+    [Fact]
+    public async Task NewSaveRejectsPreferredDefinitionFromAnotherCanonicalWord()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var requestedWord = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("requested-save"), "Requested definition");
+        var foreignWord = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("foreign-save-definition"), "Foreign definition");
+        var wordText = await GetWordTextAsync(factory, requestedWord.WordId);
+
+        using var response = await user.Client.PostAsJsonAsync(
+            "/api/words/vocabulary/add",
+            new AddWordRequest
+            {
+                Word = wordText,
+                PartOfSpeech = "Noun",
+                PreferredWordDefinitionId = foreignWord.WordDefinitionId
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await context.UserWords.AnyAsync(
+            item => item.UserId == user.User.User.Id && item.WordId == requestedWord.WordId));
+    }
+
+    [Fact]
+    public async Task CrossPartOfSpeechPreferredDefinitionUpdatePreservesStateAndDependents()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var word = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("preserve"), "Noun definition");
+        var verbDefinitionId = await IntegrationTestSeeder.SeedDefinitionAsync(
+            factory, word.WordId, "Verb definition", "Verb");
+        var addedAt = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        var lastReviewedAt = addedAt.AddDays(2);
+        var lastCorrectAt = addedAt.AddDays(1);
+        var userWordId = await IntegrationTestSeeder.SeedUserWordAsync(
+            factory,
+            user.User.User.Id,
+            word,
+            isFavorite: true,
+            correctAnswers: 3,
+            totalAttempts: 5,
+            lastReviewedAt: lastReviewedAt,
+            lastCorrectAt: lastCorrectAt);
+
+        int quizResultId;
+        int sampleSentenceId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            var persisted = await context.UserWords.SingleAsync(item => item.Id == userWordId);
+            persisted.PersonalNotes = "Keep these notes";
+            persisted.AddedAt = addedAt;
+            var quizResult = new QuizResult
+            {
+                UserId = user.User.User.Id,
+                UserWordId = userWordId,
+                QuizSessionId = Guid.NewGuid(),
+                QuizType = QuizType.Definition,
+                IsCorrect = true,
+                AttemptedAt = lastCorrectAt
+            };
+            var sampleSentence = new SampleSentence
+            {
+                UserId = user.User.User.Id,
+                UserWordId = userWordId,
+                Sentence = "A preserved sample sentence."
+            };
+            context.AddRange(quizResult, sampleSentence);
+            await context.SaveChangesAsync();
+            quizResultId = quizResult.Id;
+            sampleSentenceId = sampleSentence.Id;
+        }
+
+        using var response = await user.Client.PutAsJsonAsync(
+            $"/api/words/vocabulary/{userWordId}/preferred-definition",
+            new UpdatePreferredDefinitionRequestDto
+            {
+                PreferredWordDefinitionId = verbDefinitionId
+            });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var verificationScope = factory.Services.CreateScope();
+        var verificationContext = verificationScope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var updated = await verificationContext.UserWords.SingleAsync(item => item.Id == userWordId);
+        var verbPartOfSpeechId = await verificationContext.PartsOfSpeech
+            .Where(item => item.Name == "Verb")
+            .Select(item => item.Id)
+            .SingleAsync();
+        Assert.Equal(userWordId, updated.Id);
+        Assert.Equal(verbDefinitionId, updated.PreferredWordDefinitionId);
+        Assert.Equal(verbPartOfSpeechId, updated.PartOfSpeechId);
+        Assert.True(updated.IsFavorite);
+        Assert.Equal("Keep these notes", updated.PersonalNotes);
+        Assert.Equal(3, updated.CorrectAnswers);
+        Assert.Equal(5, updated.TotalAttempts);
+        Assert.Equal(lastReviewedAt, updated.LastReviewedAt);
+        Assert.Equal(lastCorrectAt, updated.LastCorrectAt);
+        Assert.Equal(addedAt, updated.AddedAt);
+        Assert.True(await verificationContext.QuizResults.AnyAsync(
+            item => item.Id == quizResultId && item.UserWordId == userWordId));
+        Assert.True(await verificationContext.SampleSentences.AnyAsync(
+            item => item.Id == sampleSentenceId && item.UserWordId == userWordId));
+    }
+
+    [Fact]
+    public async Task ConcurrentDuplicateSavesReturnOneStableEntry()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var word = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("concurrent-save"), "Concurrent definition");
+        var wordText = await GetWordTextAsync(factory, word.WordId);
+        factory.VocabularySaveSynchronization.Arm();
+
+        var blockedRequest = AddVocabularyAsync(user.Client, wordText, "Noun");
+        await factory.VocabularySaveSynchronization.WaitUntilBlockedAsync();
+        using var winningResponse = await AddVocabularyAsync(user.Client, wordText, "Noun");
+        factory.VocabularySaveSynchronization.Release();
+        using var losingResponse = await blockedRequest;
+        var winnerEnvelope = await winningResponse.Content.ReadFromJsonAsync<AddVocabularyEnvelope>();
+        var loserEnvelope = await losingResponse.Content.ReadFromJsonAsync<AddVocabularyEnvelope>();
+
+        Assert.Equal(HttpStatusCode.OK, winningResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, losingResponse.StatusCode);
+        Assert.NotNull(winnerEnvelope?.Data);
+        Assert.NotNull(loserEnvelope?.Data);
+        Assert.Equal(winnerEnvelope.Data.UserWordId, loserEnvelope.Data.UserWordId);
+        Assert.Contains(
+            new[] { winnerEnvelope.Data.AlreadyExisted, loserEnvelope.Data.AlreadyExisted },
+            value => value);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await context.UserWords.CountAsync(
+            item => item.UserId == user.User.User.Id && item.WordId == word.WordId));
+    }
+
+    [Fact]
+    public async Task UnrelatedVocabularyPersistenceFailureIsNotDuplicateSuccess()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var word = await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, UniqueWord("persistence-failure"), "Failure definition");
+        var wordText = await GetWordTextAsync(factory, word.WordId);
+        factory.VocabularyPersistenceFailure.Arm();
+
+        using var response = await AddVocabularyAsync(user.Client, wordText, "Noun");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.False(await context.UserWords.AnyAsync(
+            item => item.UserId == user.User.User.Id && item.WordId == word.WordId));
+    }
+
+    [Fact]
+    public async Task RuntimeModelUsesTwoColumnUserWordIdentity()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var entity = context.Model.FindEntityType(typeof(UserWord));
+        Assert.NotNull(entity);
+
+        var uniqueIndexes = entity.GetIndexes()
+            .Where(index => index.IsUnique)
+            .Select(index => index.Properties.Select(property => property.Name).ToArray())
+            .ToList();
+
+        Assert.Contains(uniqueIndexes, properties =>
+            properties.SequenceEqual(new[] { nameof(UserWord.UserId), nameof(UserWord.WordId) }));
+        Assert.DoesNotContain(uniqueIndexes, properties =>
+            properties.SequenceEqual(new[]
+            {
+                nameof(UserWord.UserId), nameof(UserWord.WordId), nameof(UserWord.PartOfSpeechId)
+            }));
     }
 
     [Fact]
@@ -361,6 +585,13 @@ public sealed class VocabularyOwnershipApiTests
     {
         public bool Success { get; set; }
         public UserVocabularyResponseDto? Data { get; set; }
+        public string? Error { get; set; }
+    }
+
+    private sealed class AddVocabularyEnvelope
+    {
+        public bool Success { get; set; }
+        public AddToVocabularyResultDto? Data { get; set; }
         public string? Error { get; set; }
     }
 }

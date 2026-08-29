@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 
 import { WordLookupComponent } from './word-lookup.component';
@@ -7,6 +7,7 @@ import { WordLookupComponent } from './word-lookup.component';
 describe('WordLookupComponent', () => {
   let component: WordLookupComponent;
   let fixture: ComponentFixture<WordLookupComponent>;
+  let httpTestingController: HttpTestingController;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -16,8 +17,11 @@ describe('WordLookupComponent', () => {
 
     fixture = TestBed.createComponent(WordLookupComponent);
     component = fixture.componentInstance;
+    httpTestingController = TestBed.inject(HttpTestingController);
     fixture.detectChanges();
   });
+
+  afterEach(() => httpTestingController.verify());
 
   it('should create', () => {
     expect(component).toBeTruthy();
@@ -45,6 +49,9 @@ describe('WordLookupComponent', () => {
     // Action: Start typing in search
     component.searchTerm = 'new search';
     component.onSearchInput();
+    httpTestingController
+      .expectOne(request => request.url.includes('/words/vocabulary/search?term='))
+      .flush({ success: true, data: { words: [] } });
 
     // Assert: Current word and related data should be cleared
     expect(component.currentWord).toBeNull();
@@ -186,5 +193,66 @@ describe('WordLookupComponent', () => {
     const highlighted = component.getHighlightedText('Lucky discovery');
 
     expect(highlighted).toContain('<mark class="search-highlight">Luck</mark>');
+  });
+
+  it('should treat an idempotent duplicate add response as success', () => {
+    component.currentWord = {
+      word: 'run',
+      source: 'canonical',
+      partOfSpeechGroups: [{
+        partOfSpeech: 'noun',
+        priority: 1,
+        definitions: [{ id: 11, definition: 'A run' }],
+        isExpanded: false,
+        primaryDefinitions: []
+      }]
+    };
+
+    component.addToVocabulary();
+    const request = httpTestingController.expectOne(request =>
+      request.url.endsWith('/words/vocabulary/add'));
+    request.flush({
+      success: true,
+      data: { userWordId: 7, wordId: 3, alreadyExisted: true, message: 'Word already in your vocabulary' }
+    });
+
+    expect(component.wordAddedToVocabulary).toBeTrue();
+    expect(component.currentWord.source).toBe('user');
+  });
+
+  it('should update the same vocabulary item definition and part of speech', () => {
+    const item = {
+      id: 7,
+      word: 'run',
+      definition: 'A noun definition',
+      preferredWordDefinitionId: 11,
+      partOfSpeech: 'noun',
+      addedAt: '',
+      isFavorite: true,
+      correctAnswers: 2,
+      totalAttempts: 4
+    };
+    component.vocabularyResponse = {
+      words: [item], totalCount: 1, page: 1, pageSize: 20, totalPages: 1
+    };
+    component.definitionEditorWord = item;
+    component.activeVocabularyWord = item;
+    component.definitionOptions = [{
+      id: 12,
+      definition: 'A verb definition',
+      partOfSpeech: 'verb'
+    }];
+    component.selectedPreferredDefinitionId = 12;
+
+    component.savePreferredDefinition();
+    const request = httpTestingController.expectOne(request =>
+      request.url.endsWith('/words/vocabulary/7/preferred-definition'));
+    request.flush({ success: true, data: { userWordId: 7, preferredWordDefinitionId: 12 } });
+
+    expect(item.id).toBe(7);
+    expect(item.preferredWordDefinitionId).toBe(12);
+    expect(item.definition).toBe('A verb definition');
+    expect(item.partOfSpeech).toBe('verb');
+    expect(item.isFavorite).toBeTrue();
   });
 });

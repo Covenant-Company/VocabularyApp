@@ -36,3 +36,11 @@ public class UserVocabularyResponseDto
   public int PageSize { get; set; }
   public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
 }
+
+public class AddToVocabularyResultDto
+{
+  public int UserWordId { get; set; }
+  public int WordId { get; set; }
+  public bool AlreadyExisted { get; set; }
+  public string Message { get; set; } = string.Empty;
+}

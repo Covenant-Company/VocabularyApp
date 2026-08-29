@@ -84,7 +84,7 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(e => e.WordId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            // Removed PartOfSpeech foreign key and composite index (no longer storing PartOfSpeech per user word)
+            // PartOfSpeech is retained as compatibility/derived state for the selected definition.
             entity.HasOne(e => e.PartOfSpeech)
                 .WithMany(p => p.UserWords)
                 .HasForeignKey(e => e.PartOfSpeechId)
@@ -95,8 +95,8 @@ public class ApplicationDbContext : DbContext
                 .HasForeignKey(e => e.PreferredWordDefinitionId)
                 .OnDelete(DeleteBehavior.NoAction);
 
-            // Ensure unique combination - each user can only have one entry per word+part-of-speech
-            entity.HasIndex(e => new { e.UserId, e.WordId, e.PartOfSpeechId }).IsUnique();
+            // A canonical word can be saved only once per user. PartOfSpeech is not identity.
+            entity.HasIndex(e => new { e.UserId, e.WordId }).IsUnique();
         });
 
         // Configure SampleSentence entity

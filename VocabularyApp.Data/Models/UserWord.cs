@@ -27,6 +27,8 @@ public class UserWord
     public virtual Word Word { get; set; } = null!;
     // Removed PartOfSpeech navigation
 
+    // Compatibility/derived state synchronized from PreferredWordDefinition when selected.
+    // This column is not part of the saved-word identity.
     public int PartOfSpeechId { get; set; }
     public int? PreferredWordDefinitionId { get; set; }
 

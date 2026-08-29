@@ -223,22 +223,50 @@ namespace VocabularyApp.WebApi.Services
                         "Word is not available in the canonical dictionary. Look it up before adding it to your vocabulary.");
                 }
 
-                var pos = await ResolvePartOfSpeechAsync(request.PartOfSpeech);
-
-                // Check if already exists for this user/word/part-of-speech
-                var exists = await _db.UserWords
-                    .AnyAsync(uw => uw.UserId == userId && uw.WordId == word.Id && uw.PartOfSpeechId == pos.Id);
-                if (exists)
+                // Saved-word identity is UserId + WordId. A repeated add never changes
+                // the existing entry's selected meaning or user-owned state.
+                var existing = await _db.UserWords
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordId == word.Id);
+                if (existing != null)
                 {
-                    return ServiceResult<object>.Success(new { message = "Word already in your vocabulary" });
+                    return ExistingVocabularyEntry(existing);
+                }
+
+                int partOfSpeechId;
+                int? preferredWordDefinitionId;
+
+                if (request.PreferredWordDefinitionId.HasValue)
+                {
+                    var requestedDefinition = await _db.WordDefinitions
+                        .Where(wd =>
+                            wd.Id == request.PreferredWordDefinitionId.Value &&
+                            wd.WordId == word.Id)
+                        .Select(wd => new { wd.Id, wd.PartOfSpeechId })
+                        .FirstOrDefaultAsync();
+
+                    if (requestedDefinition == null)
+                    {
+                        return ServiceResult<object>.Failure(
+                            "Selected definition is not valid for this word.");
+                    }
+
+                    preferredWordDefinitionId = requestedDefinition.Id;
+                    partOfSpeechId = requestedDefinition.PartOfSpeechId;
+                }
+                else
+                {
+                    var pos = await ResolvePartOfSpeechAsync(request.PartOfSpeech);
+                    partOfSpeechId = pos.Id;
+                    preferredWordDefinitionId = await ResolvePreferredDefinitionIdAsync(word.Id, pos.Id);
                 }
 
                 var userWord = new UserWord
                 {
                     UserId = userId,
                     WordId = word.Id,
-                    PartOfSpeechId = pos.Id,
-                    PreferredWordDefinitionId = await ResolvePreferredDefinitionIdAsync(word.Id, pos.Id, request.PreferredWordDefinitionId),
+                    PartOfSpeechId = partOfSpeechId,
+                    PreferredWordDefinitionId = preferredWordDefinitionId,
                     // CreatedAt, CustomDefinition, IsFavorite, DifficultyLevel are not mapped in DB currently
                     // Use AddedAt (mapped) for timestamp
                     AddedAt = DateTime.UtcNow,
@@ -247,9 +275,32 @@ namespace VocabularyApp.WebApi.Services
                     CorrectAnswers = 0
                 };
                 _db.UserWords.Add(userWord);
-                await _db.SaveChangesAsync();
+                try
+                {
+                    await _db.SaveChangesAsync();
+                }
+                catch (DbUpdateException ex) when (IsUserWordIdentityDuplicate(ex))
+                {
+                    _db.Entry(userWord).State = EntityState.Detached;
+                    var winner = await _db.UserWords
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordId == word.Id);
 
-                return ServiceResult<object>.Success(new { message = "Word added to your vocabulary", wordId = word.Id });
+                    if (winner != null)
+                    {
+                        return ExistingVocabularyEntry(winner);
+                    }
+
+                    throw;
+                }
+
+                return ServiceResult<object>.Success(new AddToVocabularyResultDto
+                {
+                    UserWordId = userWord.Id,
+                    WordId = word.Id,
+                    AlreadyExisted = false,
+                    Message = "Word added to your vocabulary"
+                });
             }
             catch (Exception ex)
             {
@@ -291,25 +342,9 @@ namespace VocabularyApp.WebApi.Services
                     return ServiceResult<object>.Failure("Selected definition is not valid for this word.");
                 }
 
-                if (userWord.PartOfSpeechId != selectedDefinition.PartOfSpeechId)
-                {
-                    // Move this vocabulary entry to the selected definition's part of speech.
-                    // This keeps the quiz data consistent with the chosen preferred definition.
-                    var conflictingEntryExists = await _db.UserWords
-                        .AnyAsync(uw =>
-                            uw.UserId == userId &&
-                            uw.WordId == userWord.WordId &&
-                            uw.PartOfSpeechId == selectedDefinition.PartOfSpeechId &&
-                            uw.Id != userWord.Id);
-
-                    if (conflictingEntryExists)
-                    {
-                        return ServiceResult<object>.Failure("You already have this word saved for that part of speech. Please edit that entry instead.");
-                    }
-
-                    userWord.PartOfSpeechId = selectedDefinition.PartOfSpeechId;
-                }
-
+                // Preferred definition is the selected meaning; POS remains synchronized
+                // compatibility state and does not move or replace UserWord identity.
+                userWord.PartOfSpeechId = selectedDefinition.PartOfSpeechId;
                 userWord.PreferredWordDefinitionId = preferredWordDefinitionId;
                 await _db.SaveChangesAsync();
 
@@ -574,28 +609,59 @@ namespace VocabularyApp.WebApi.Services
             return definitions.OrderBy(d => d.DisplayOrder).FirstOrDefault();
         }
 
-        private async Task<int?> ResolvePreferredDefinitionIdAsync(int wordId, int partOfSpeechId, int? preferredWordDefinitionId)
+        private async Task<int?> ResolvePreferredDefinitionIdAsync(int wordId, int partOfSpeechId)
         {
-            if (preferredWordDefinitionId.HasValue)
-            {
-                var requestedDefinitionId = preferredWordDefinitionId.Value;
-                var isValid = await _db.WordDefinitions
-                    .AnyAsync(wd =>
-                        wd.Id == requestedDefinitionId &&
-                        wd.WordId == wordId &&
-                        wd.PartOfSpeechId == partOfSpeechId);
-
-                if (isValid)
-                {
-                    return requestedDefinitionId;
-                }
-            }
-
             return await _db.WordDefinitions
                 .Where(wd => wd.WordId == wordId && wd.PartOfSpeechId == partOfSpeechId)
                 .OrderBy(wd => wd.DisplayOrder)
                 .Select(wd => (int?)wd.Id)
                 .FirstOrDefaultAsync();
+        }
+
+        private static ServiceResult<object> ExistingVocabularyEntry(UserWord userWord) =>
+            ServiceResult<object>.Success(new AddToVocabularyResultDto
+            {
+                UserWordId = userWord.Id,
+                WordId = userWord.WordId,
+                AlreadyExisted = true,
+                Message = "Word already in your vocabulary"
+            });
+
+        private static bool IsUserWordIdentityDuplicate(DbUpdateException exception)
+        {
+            const string indexName = "IX_UserWords_UserId_WordId";
+
+            for (Exception? current = exception; current != null; current = current.InnerException)
+            {
+                var identifiesIndex = current.Message.Contains(
+                    indexName,
+                    StringComparison.OrdinalIgnoreCase);
+                var identifiesSqliteColumns =
+                    current.Message.Contains("UserWords.UserId", StringComparison.OrdinalIgnoreCase) &&
+                    current.Message.Contains("UserWords.WordId", StringComparison.OrdinalIgnoreCase);
+
+                if (!identifiesIndex && !identifiesSqliteColumns)
+                {
+                    continue;
+                }
+
+                var exceptionType = current.GetType();
+                if (exceptionType.FullName == "Microsoft.Data.SqlClient.SqlException")
+                {
+                    var number = exceptionType.GetProperty("Number")?.GetValue(current) as int?;
+                    return number is 2601 or 2627;
+                }
+
+                if (exceptionType.FullName == "Microsoft.Data.Sqlite.SqliteException")
+                {
+                    var extendedErrorCode = exceptionType
+                        .GetProperty("SqliteExtendedErrorCode")?
+                        .GetValue(current) as int?;
+                    return extendedErrorCode == 2067;
+                }
+            }
+
+            return false;
         }
 
         private static WordDto MapToDto(Word word)

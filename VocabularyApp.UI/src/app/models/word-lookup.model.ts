@@ -68,3 +68,10 @@ export interface VocabularyResponse {
   pageSize: number;
   totalPages: number;
 }
+
+export interface AddToVocabularyResult {
+  userWordId: number;
+  wordId: number;
+  alreadyExisted: boolean;
+  message: string;
+}

@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Router } from '@angular/router';
-import { WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
+import { AddToVocabularyResult, WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
 import { ToastService } from '../../services/toast.service';
 
 interface DefinitionOption {
@@ -344,11 +344,14 @@ export class WordLookupComponent implements OnInit {
     };
 
     // Use your ApiService post helper (see next section). Endpoint path is appended to baseUrl.
-    this.apiService.post<any>('/words/vocabulary/add', payload).subscribe({
+    this.apiService.post<AddToVocabularyResult>('/words/vocabulary/add', payload).subscribe({
       next: (res) => {
         console.log('Add to vocabulary response:', res);
         // show user feedback with toast
-        this.toastService.success(`Word "${this.currentWord?.word}" added to your vocabulary!`);
+        const message = res.data?.alreadyExisted
+          ? `Word "${this.currentWord?.word}" is already in your vocabulary.`
+          : `Word "${this.currentWord?.word}" added to your vocabulary!`;
+        this.toastService.success(message);
         // Set flag to disable the button
         this.wordAddedToVocabulary = true;
         if (this.currentWord) {
@@ -592,12 +595,16 @@ export class WordLookupComponent implements OnInit {
             if (selectedDefinition) {
               target.definition = selectedDefinition.definition;
               target.example = selectedDefinition.example;
+              target.partOfSpeech = selectedDefinition.partOfSpeech;
             }
           }
         }
 
         if (this.activeVocabularyWord && this.activeVocabularyWord.id === userWordId) {
           this.activeVocabularyWord.preferredWordDefinitionId = definitionId;
+          if (selectedDefinition) {
+            this.activeVocabularyWord.partOfSpeech = selectedDefinition.partOfSpeech;
+          }
         }
 
         if (this.definitionEditorWord) {

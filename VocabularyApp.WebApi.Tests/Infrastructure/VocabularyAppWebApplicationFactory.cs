@@ -22,6 +22,8 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     public ControllableDictionaryHandler DictionaryHandler { get; } = new();
     public QuizPersistenceFailureInterceptor QuizPersistenceFailure { get; } = new();
     public QuizSubmissionSynchronizationInterceptor QuizSubmissionSynchronization { get; } = new();
+    public VocabularySaveSynchronizationInterceptor VocabularySaveSynchronization { get; } = new();
+    public VocabularyPersistenceFailureInterceptor VocabularyPersistenceFailure { get; } = new();
 
     static VocabularyAppWebApplicationFactory()
     {
@@ -82,7 +84,9 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
                     .UseSqlite(_connection)
                     .AddInterceptors(
                         QuizPersistenceFailure,
-                        QuizSubmissionSynchronization));
+                        QuizSubmissionSynchronization,
+                        VocabularySaveSynchronization,
+                        VocabularyPersistenceFailure));
 
             services.RemoveAll<IWordService>();
             services.AddHttpClient<IWordService, WordService>()
