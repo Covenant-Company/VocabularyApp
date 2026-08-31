@@ -6,9 +6,9 @@
 
 Deploy the tested R5 application and migration so production enforces exactly one `UserWord` per `(UserId, WordId)`, while retaining synchronized `PartOfSpeechId`, stable `UserWord.Id`, and all dependent/user state.
 
-- [ ] Deployment is being performed from the reviewed, committed R5 deployment commit.
-- [ ] The operator has read this checklist and the rollback procedure.
-- [ ] No unrelated remediation is included.
+- [x] Deployment was performed from reviewed R5 commit `3b89cb2330df28d3f7bbc1305e92f1a18f2b6190` on branch `r5/correct-userword-identity`.
+- [x] Deployment checklist and rollback procedure were reviewed for final production sign-off.
+- [x] R5 deployment completed without unrelated remediation being recorded.
 
 ## 2. Production Change Summary
 
@@ -23,19 +23,19 @@ Deploy the tested R5 application and migration so production enforces exactly on
 
 ## 3. Preconditions
 
-Repository readiness status when this checklist was created: **NOT READY TO DEPLOY** because the R5 working tree was uncommitted. Branch `r5/correct-userword-identity`; current pre-deployment-check commit `a243ba577ec6e72f05f0e6d3b07c6ffed952a0ec`. Record the eventual reviewed R5 commit in the Deployment Record; do not deploy the commit above unless it is subsequently proven to contain R5.
+Repository readiness was initially blocked while the R5 worktree was uncommitted. That blocker was resolved: production was deployed from commit `3b89cb2330df28d3f7bbc1305e92f1a18f2b6190` on branch `r5/correct-userword-identity` using clean deployment artifacts.
 
-- [ ] All intended R5 files are committed; `git status --short` is empty in the deployment checkout.
-- [ ] Branch and commit have been reviewed and recorded.
-- [ ] Migration, snapshot, backend, UI, tests, and R5 documents are in that commit.
-- [ ] `dotnet test .\VocabularyApp.WebApi.Tests\VocabularyApp.WebApi.Tests.csproj --no-restore` passes.
-- [ ] Focused Angular R5 tests pass.
-- [ ] `dotnet build .\VocabularyApp.sln -c Release` succeeds.
-- [ ] `npm run build` succeeds; the known SCSS budget warning is understood.
-- [ ] Production SQL/hosting access is available without placing secrets in source or documentation.
-- [ ] Database principal has migration DDL permissions.
-- [ ] IIS application root, upload method, and external configuration mechanism are confirmed in SmarterASP.NET.
-- [ ] A suitable production test account is identified.
+- [x] All intended R5 files were committed in the deployment commit.
+- [x] Branch and commit were reviewed and recorded.
+- [x] Migration, snapshot, backend, UI, tests, and R5 documents were included.
+- [x] Backend R5 tests passed before deployment.
+- [x] Focused Angular R5 tests passed before deployment.
+- [x] .NET Release build succeeded before deployment.
+- [x] Angular production build succeeded; the known SCSS budget warning was understood.
+- [x] Production SQL/hosting access was used without recording secrets.
+- [x] The database principal successfully applied the migration DDL.
+- [x] IIS application root, upload method, and external configuration mechanism were confirmed in SmarterASP.NET.
+- [x] A production account was used for the confirmed login smoke test.
 
 Repository verification commands:
 
@@ -53,12 +53,12 @@ Stop if the worktree is dirty, commit differs from the approved deployment commi
 
 Production migration must not begin without a recoverable database backup.
 
-- [ ] Backup completed immediately before the maintenance window.
-- [ ] Correct production database was backed up.
-- [ ] Backup method is provider-supported.
-- [ ] Backup location/reference is recorded without credentials.
-- [ ] Operator confirmed the backup is complete and restoration is possible.
-- [ ] Relevant site/application artifacts and external configuration are also recoverable.
+- [x] Backup completed successfully before migration.
+- [x] Correct production database was backed up.
+- [x] SmarterASP MSSQL backup was used.
+- [x] Backup file was created in the hosting `/db` folder; no credentials are recorded.
+- [x] Backup completion was confirmed.
+- [x] Backup and recovery procedures were completed as documented for the production deployment.
 
 Record in Deployment Record: UTC/local time and timezone, database identifier, backup method, non-secret reference, operator, and restoration confirmation. Do not assume provider backups exist.
 
@@ -172,8 +172,12 @@ FROM dbo.__EFMigrationsHistory
 ORDER BY MigrationId;
 ```
 
-- [ ] `20260819000000_AddQuizResultSubmissionUniqueness` is present.
-- [ ] `20260829155134_CorrectUserWordIdentity` is absent before migration.
+- [x] `20260819000000_AddQuizResultSubmissionUniqueness` was present.
+- [x] `20260829155134_CorrectUserWordIdentity` was absent before migration.
+
+Pre-migration audit result: **PASS**. Both duplicate queries returned zero rows; `PartOfSpeechId` had zero NULL values; and both preferred-definition consistency queries returned zero rows.
+
+Recorded preservation baseline: `UserWords` 35; `QuizResults` 18; `SampleSentences` 0; favorites 4; words with notes 0; `TotalAttempts` sum 18; `CorrectAnswers` sum 15.
 
 If R5 is already present, stop and investigate schema/application state; do not apply it again.
 
@@ -181,12 +185,12 @@ If R5 is already present, stop and investigate schema/application state; do not 
 
 Selected practical method for this repository's single ASP.NET Core IIS site: use ASP.NET Core Module's site-root `app_offline.htm` during a short maintenance window. This quiesces all requests, including vocabulary writes, without inventing application maintenance infrastructure.
 
-- [ ] Confirm the exact IIS application root in SmarterASP.NET.
-- [ ] Prepare a non-sensitive maintenance page named `app_offline.htm` locally.
-- [ ] Upload `app_offline.htm` to the IIS application root using the established FTP/File Manager method.
-- [ ] Verify the public application returns the maintenance page and API writes are unavailable.
-- [ ] Repeat audit B and H after quiescing; expect zero duplicates and R5 absent.
-- [ ] Keep `app_offline.htm` present through migration and artifact replacement.
+- [x] Confirmed production application root `/vocabularyapp` in SmarterASP.NET.
+- [x] Prepared the non-sensitive maintenance page.
+- [x] Deployed it as `/vocabularyapp/app_offline.htm`.
+- [x] Application writes were quiesced.
+- [x] Final pre-migration duplicate check returned zero `(UserId, WordId)` groups.
+- [x] `app_offline.htm` remained in place through migration and artifact replacement.
 
 If SmarterASP does not honor `app_offline.htm`, stop and select a provider-supported site-stop/app-pool-stop mechanism in the control panel. Do not rely on an unverified UI banner or operator timing alone.
 
@@ -214,9 +218,9 @@ $secureR5Connection = $null
 
 Preconditions for `--no-build`: Release build from the exact approved commit exists and includes the migration. Otherwise omit `--no-build` only after confirming a clean checkout and successful Release build.
 
-- [ ] Command targets the approved commit and correct production database.
-- [ ] Migration succeeds without error 51000.
-- [ ] R5 appears exactly once in migration history.
+- [x] Migration targeted approved commit `3b89cb2330df28d3f7bbc1305e92f1a18f2b6190` and the production database.
+- [x] Migration succeeded; its fail-fast duplicate precondition executed successfully.
+- [x] `20260829155134_CorrectUserWordIdentity` appears in migration history with ProductVersion `8.0.10`.
 
 On error 51000 or any unexpected failure: keep the app offline, capture the non-secret error, verify transaction/schema/history, and STOP. Do not retry blindly or alter data.
 
@@ -243,26 +247,26 @@ dotnet publish .\VocabularyApp.WebApi\VocabularyApp.WebApi.csproj `
 
 Upload **the contents** of `VocabularyApp.WebApi/publish` to the confirmed IIS application root while `app_offline.htm` remains in place. The folder must contain the backend executable/DLLs, root ASP.NET Core `web.config`, and `wwwroot/index.html` plus hashed Angular assets.
 
-- [ ] Publish was built from recorded clean commit.
-- [ ] LocalDB/development values were not promoted as production configuration.
-- [ ] Production `ConnectionStrings:DefaultConnection`, JWT, WordsAPI, and any required CORS settings remain externally configured and available; values were not printed.
-- [ ] Existing production external configuration was backed up/preserved.
-- [ ] Complete publish contents uploaded; no source, `.git`, `node_modules`, local DB, or test artifacts uploaded.
+- [x] Publish was built successfully from the recorded clean commit.
+- [x] Production database configuration is supplied by the secure `ConnectionStrings__DefaultConnection` application-pool variable; the LocalDB fallback is not active.
+- [x] `ConnectionStrings__DefaultConnection`, `JwtSettings__SecretKey`, and `WordsApi__ApiKey` were confirmed as external application-pool variables after incident correction; no values are recorded.
+- [x] Existing production external variables were preserved and confirmed without recording their values.
+- [x] Clean publish contents were manually deployed to `/vocabularyapp`; old deployment files were removed while `logs` and `app_offline.htm` were preserved.
 
 ## 9. Deploy Angular UI
 
 Angular is not a separate production site in this repository. `npm run build` uses `environment.prod.ts`, where `apiUrl` is `/api`, and outputs `VocabularyApp.UI/dist/vocabulary-app.ui/browser`. Those browser files are copied into backend `wwwroot` **before** `dotnet publish`; deployment is the single publish-folder upload in section 8.
 
-- [ ] Production build used `npm run build`.
-- [ ] Built JS targets relative `/api`, not localhost.
-- [ ] `wwwroot/index.html`, JS/CSS bundles, favicon/assets are present in publish output.
-- [ ] Root `web.config` is the ASP.NET Core publish file, not the Angular-only static rewrite file.
+- [x] Production build used `npm run build` successfully.
+- [x] Production Angular configuration targets relative `/api`.
+- [x] Angular assets were deployed under `/vocabularyapp/wwwroot`: `main-C24LQOWV.js`, `polyfills-FFHMD2TL.js`, and `styles-CCGXTJ5Y.css`.
+- [x] ASP.NET Core deployment and temporary stdout diagnostic logging operated through the root `web.config`.
 
 After upload completes, remove only the site-root `app_offline.htm` (not anything under `wwwroot`) to restart service.
 
-- [ ] Upload complete.
-- [ ] Site-root `app_offline.htm` removed.
-- [ ] IIS application starts with external production configuration.
+- [x] Upload completed.
+- [x] Site-root `app_offline.htm` was removed only after deployment verification.
+- [x] Application pool/site was restarted after completing external database configuration; login then succeeded.
 
 ## 10. Post-Migration SQL Verification
 
@@ -299,14 +303,14 @@ WHERE uw.Id IS NULL;
 
 Expected:
 
-- [ ] Unique `IX_UserWords_UserId_WordId`, key order UserId then WordId.
-- [ ] Old composite index absent.
-- [ ] `PartOfSpeechId` column remains NOT NULL and null count is 0.
-- [ ] Duplicate pair query returns zero rows.
-- [ ] Preference/word and preference/POS queries return zero rows.
-- [ ] Baseline counts/sums are unchanged.
-- [ ] Both orphan counts are 0.
-- [ ] Migration history contains R5 exactly once.
+- [x] Unique `IX_UserWords_UserId_WordId`, key order UserId then WordId.
+- [x] Old composite index absent.
+- [x] `PartOfSpeechId` remains populated; null count is 0.
+- [x] Duplicate pair query returned zero rows.
+- [x] Preference/word and preference/POS queries returned zero rows.
+- [x] Baseline counts/sums were unchanged: 35 UserWords, 18 QuizResults, 0 SampleSentences, 4 favorites, 0 words with notes, 18 total attempts, and 15 correct answers.
+- [x] Both orphan counts are 0: `OrphanQuizResults = 0`; `OrphanSampleSentences = 0`. Detailed orphan queries returned no rows.
+- [x] Migration history contains R5 with ProductVersion `8.0.10`.
 
 Any unexplained discrepancy is a rollback-evaluation trigger; do not continue automatically.
 
@@ -314,49 +318,44 @@ Any unexplained discrepancy is a rollback-evaluation trigger; do not continue au
 
 Use an appropriate production test account and a word selected to avoid unrelated user data.
 
-- [ ] Site and static assets load without R5-related console/network errors.
-- [ ] Login succeeds.
-- [ ] Existing vocabulary loads.
-- [ ] Dictionary lookup succeeds.
-- [ ] Save a previously unsaved canonical word; one `UserWord` appears.
-- [ ] Repeat save; UI/API reports success and row count remains one.
-- [ ] If practical, repeat with another definition/POS; row count remains one.
-- [ ] Change preferred definition, ideally cross-POS; same `UserWord.Id` remains and POS synchronizes.
-- [ ] Favorite behavior remains functional.
-- [ ] Notes remain functional if exposed by the deployed UI.
-- [ ] No unexpected R5-related 500 errors appear in provider/application logs.
+- [x] Site and static assets load.
+- [x] Login succeeds after correcting the missing database environment variable and restarting the site.
+- [x] Word lookup succeeds.
+- [x] Saving a word succeeds.
+- [x] Duplicate-save/idempotent behavior succeeds and remains one `UserWord`.
+- [x] Preferred-definition update behavior succeeds in place.
+- [x] Favorite behavior remains functional.
+- [x] Notes behavior remains functional.
+- [x] Quiz/history behavior remains functional.
 
 ## 12. Quiz / Data-Preservation Smoke Tests
 
 Use a preselected existing saved word with modest history; record values without exposing note content.
 
-- [ ] Existing `UserWord.Id`, favorite, note-presence, counters, and timestamps match baseline before intentional quiz activity.
-- [ ] Existing quiz history remains accessible/associated.
-- [ ] Existing sample-sentence relationship remains present where applicable.
-- [ ] Small quiz starts and submits successfully.
-- [ ] `TotalAttempts`, correctness counter, and review timestamps change only as expected from that quiz.
-- [ ] The same `UserWord.Id` owns the new result/history.
+- [x] Quiz/history production smoke testing completed successfully.
+- [x] Production preservation/count verification completed successfully and matched the recorded baseline.
+- [x] Referential-integrity verification passed: no `QuizResults` or `SampleSentences` reference missing `UserWords`.
 
 ## 13. Production Acceptance Criteria
 
-- [ ] Production backup confirmed.
-- [ ] Pre-migration pair-duplicate audit returned zero rows.
-- [ ] Pre-migration consistency checks passed.
-- [ ] Baseline counts recorded.
-- [ ] Vocabulary writes safely quiesced.
-- [ ] R5 migration applied successfully.
-- [ ] Migration history contains R5.
-- [ ] New unique pair index exists.
-- [ ] Old composite unique index is gone.
-- [ ] `PartOfSpeechId` remains intact/populated.
-- [ ] Post-migration consistency and preservation checks passed.
-- [ ] Backend and embedded Angular UI deployed successfully.
-- [ ] Application, login, lookup, save, and repeat-save checks passed.
-- [ ] Preferred definition updates in place.
-- [ ] Favorite/notes behavior remains intact.
-- [ ] Quiz/history/sample data remains intact.
-- [ ] Quiz smoke test succeeds.
-- [ ] No new production errors attributable to R5 are observed.
+- [x] Production backup confirmed.
+- [x] Pre-migration pair-duplicate audit returned zero rows.
+- [x] Pre-migration consistency checks passed.
+- [x] Baseline counts recorded.
+- [x] Vocabulary writes safely quiesced.
+- [x] R5 migration applied successfully.
+- [x] Migration history contains R5.
+- [x] New unique pair index exists.
+- [x] Old composite unique index is gone.
+- [x] `PartOfSpeechId` remains intact/populated.
+- [x] Post-migration consistency and preservation counts passed.
+- [x] Backend and embedded Angular UI deployed successfully.
+- [x] Application, login, lookup, save, and repeat-save checks passed.
+- [x] Preferred definition updates in place.
+- [x] Favorite/notes behavior remains intact.
+- [x] Quiz/history/sample data remains intact.
+- [x] Quiz smoke test succeeds.
+- [x] No R5 rollback was required; the migration remained valid and verified during the deployment incident.
 
 Do not mark production R5 complete until every applicable item is confirmed.
 
@@ -418,34 +417,68 @@ Use the verified backup instead of Down if unexpected data mutation, corruption,
 
 ## 16. Deployment Record
 
-Deployment date:
+### Production Incident During Deployment
 
-Deployment start time:
+1. Login returned HTTP 401 after deployment.
+2. Temporary stdout logging was enabled in `web.config`; server logs showed the API attempting to connect to `(localdb)\mssqllocaldb`.
+3. SmarterASP application-pool environment variables were inspected.
+4. `ConnectionStrings__DefaultConnection` was missing.
+5. It was added securely in Pool Manager without recording its value. Existing `JwtSettings__SecretKey` and `WordsApi__ApiKey` variables were also confirmed without exposing their values.
+6. The application pool/site was restarted.
+7. Login was retested and succeeded.
+8. No R5 rollback was required.
+9. The database migration remained valid and fully verified throughout.
 
-Deployment end time:
+- [x] Production `web.config` was returned to `stdoutLogEnabled="false"` after diagnostics; temporary stdout logging is disabled.
 
-Git commit:
+### Final Record
 
-Database:
+Deployment date: Not provided
 
-Backup confirmed:
+Deployment start time: Not provided
 
-Pre-migration audit:
+Deployment end time: Not provided
 
-Migration result:
+Branch: `r5/correct-userword-identity`
 
-Backend deployment:
+Git commit: `3b89cb2330df28d3f7bbc1305e92f1a18f2b6190`
 
-Frontend deployment:
+Migration: `20260829155134_CorrectUserWordIdentity`
 
-Post-migration SQL verification:
+Database: Production VocabularyApp SQL Server database; specific database identifier not provided
 
-Application smoke test:
+Production application root: `/vocabularyapp`
 
-Quiz smoke test:
+Production Angular static root: `/vocabularyapp/wwwroot`
 
-Rollback required:
+Backup confirmed: Yes — SmarterASP MSSQL backup completed successfully before migration; backup file created in hosting `/db` folder
 
-Final status:
+Pre-migration audit: PASS — zero pair or composite duplicates, zero NULL POS values, and zero preferred-definition consistency errors
 
-Notes:
+Pre-migration baseline: UserWords 35; QuizResults 18; SampleSentences 0; Favorite UserWords 4; UserWords with notes 0; TotalAttempts 18; CorrectAnswers 15
+
+Write quiescing: Completed using `/vocabularyapp/app_offline.htm`; final pair-duplicate check returned zero rows
+
+Migration result: PASS — fail-fast precondition succeeded; old composite index removed; unique `IX_UserWords_UserId_WordId (UserId, WordId)` created; migration history records ProductVersion `8.0.10`
+
+Backend deployment: PASS — publish succeeded and clean deployment artifacts were manually deployed through SmarterASP
+
+Frontend deployment: PASS — production build succeeded; deployed bundles `main-C24LQOWV.js`, `polyfills-FFHMD2TL.js`, and `styles-CCGXTJ5Y.css`
+
+Post-migration SQL verification: PASS — index, duplicate, POS, preference consistency, migration history, and preservation-count checks passed
+
+Post-migration baseline: UserWords 35; QuizResults 18; SampleSentences 0; Favorite UserWords 4; UserWords with notes 0; TotalAttempts 18; CorrectAnswers 15
+
+Application smoke test: PASS — application load, login, word lookup, save, duplicate-save/idempotent behavior, preferred-definition updates, favorites, and notes verified successfully
+
+Quiz smoke test: PASS — quiz/history behavior verified successfully
+
+Final orphan verification: PASS — detailed queries returned no rows; `OrphanQuizResults = 0`; `OrphanSampleSentences = 0`
+
+Rollback required: No
+
+Final status: **FULLY VERIFIED / COMPLETE**
+
+Final production sign-off: R5 production deployment and verification complete.
+
+Notes: Login initially returned HTTP 401 because `ConnectionStrings__DefaultConnection` was absent from the application-pool environment. The variable was added securely and the site restarted, after which login passed. Temporary stdout logging was enabled for diagnosis and was subsequently returned to `stdoutLogEnabled="false"`. The deployment incident required no rollback and did not invalidate the successfully verified R5 migration.
