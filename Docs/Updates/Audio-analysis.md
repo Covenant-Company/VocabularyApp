@@ -8,7 +8,7 @@ Older cached words may still show Play because `AudioUrl` is a nullable, persist
 
 Old playback can fail because the browser loads the stored external URL directly and the application neither validates it beforehand nor clears it after failure. Playback rejection is caught, logged only to the console, and followed by browser speech synthesis (`word-lookup.component.ts:424-485`). The exact production failure—404, authorization/hotlink rejection, TLS, redirect, media format, network policy, or another cause—is not proven without inspecting the stored hosts and browser/network error.
 
-External provider verification now establishes that the current documented WordsAPI contract exposes pronunciation/IPA text, including through `GET /words/{word}/pronunciation`, but does not expose a playable audio URL, media file, or audio stream. The smallest reliable direction is therefore to retain WordsAPI for definitions and lexical data, select a dedicated pronunciation-audio provider during implementation planning, preserve historical URLs pending audit, and make playback failures visible and nonfatal. Do not change R5.
+External provider verification establishes that the current documented WordsAPI contract exposes pronunciation/IPA text, including through `GET /words/{word}/pronunciation`, but does not expose a playable audio URL, media file, or audio stream. Merriam-Webster's Collegiate Dictionary API is now selected for pronunciation-audio enrichment. The smallest reliable direction is therefore to retain WordsAPI for definitions and lexical data, resolve audio through Merriam-Webster in the backend, preserve historical URLs pending audit, and make playback failures visible and nonfatal. Do not change R5.
 
 ## 2. Current Audio Architecture
 
@@ -167,7 +167,7 @@ Therefore, **WordsAPI currently exposes pronunciation/IPA information but no doc
 
 | Option | Benefits | Risks | Scope | Recommendation |
 |---|---|---|---|---|
-| A — WordsAPI plus a separate audio provider | Decouples lexical data from playable media. | Adds a dependency, matching policy, limits, cost, licensing, and outage handling. | Backend client/cache policy and Angular failure UX; migration is not inherently required. | **Recommended primary direction.** Select the provider during implementation planning. |
+| A — WordsAPI plus a separate audio provider | Decouples lexical data from playable media. | Adds a dependency, matching policy, limits, cost, licensing, and outage handling. | Backend client/cache policy and Angular failure UX; migration is not inherently required. | **Selected direction:** Merriam-Webster Collegiate supplies audio only. |
 | B — Use WordsAPI directly for audio | Would retain one vendor. | The current documented contract exposes no playable resource. | Not presently actionable. | **Do not recommend** unless new direct, current evidence proves playable WordsAPI media; no such repository evidence exists. |
 | C — Show no audio button when no usable source exists | Truthful and consistent with current null behavior. | Temporarily provides no recorded audio. | Small Angular availability/failure UX change; no cleanup required. | Appropriate interim behavior; do not discard historical values that may still work. |
 | D — Dedicated provider with backend proxy/cache | Supports authenticated or short-lived media and centralizes policy. | Adds bandwidth, storage, SSRF, range, validation, licensing, and operational burdens. | Backend media endpoint/cache and Angular contract; storage design may change. | Use only if direct HTTPS playback is unsuitable and terms permit it. |
@@ -181,6 +181,18 @@ Keep WordsAPI responsible for definitions and lexical data. Its IPA/pronunciatio
 
 This separation is safer because dictionary changes cannot silently redefine the audio contract, each provider is evaluated against its actual capability and terms, audio-specific failure/rate/cache policy stays isolated, and the existing lexical lookup remains stable. Preserve historical URLs until the audit classifies them; treat them as untrusted legacy references and replace them only when newly resolved audio is valid.
 
+### Selected Audio Provider
+
+**Selected provider:** Merriam-Webster Collegiate Dictionary API.
+
+**Role:** pronunciation audio only. Merriam-Webster entries expose pronunciation sound metadata containing an audio identifier, from which a supported MP3 media URL can be constructed using Merriam-Webster's documented subdirectory rules.
+
+**WordsAPI remains:** the primary and authoritative provider for definitions, parts of speech, pronunciation text, and other lexical data. This decision does not replace or broaden the existing WordsAPI integration.
+
+Merriam-Webster was selected because its documented Collegiate contract includes English pronunciation audio metadata and browser-playable media delivery, while WordsAPI's current documented contract does not. The integration should remain backend-only, cache-first, and optional so a Merriam-Webster failure never changes a successful dictionary result.
+
+Before production use, the developer must verify the terms that apply to VocabularyApp, including non-commercial/free-use eligibility, query limits, any required commercial license, and branding/attribution requirements. This is a licensing and branding checkpoint, not a legal conclusion.
+
 ## 11. Recommended Target Behavior
 
 - Show Play only when the application has a nonblank audio reference that is supported by the selected provider policy.
@@ -192,20 +204,20 @@ This separation is safer because dictionary changes cannot silently redefine the
 
 ## 12. Historical Audio Strategy
 
-Do not bulk-clear or backfill before running the section 7 audit and selecting a supported provider. The safest initial strategy is:
+Do not bulk-clear or backfill before running the section 7 audit. The safest initial strategy with Merriam-Webster selected is:
 
 1. leave existing values untouched during analysis;
 2. make playback failure visible and nonfatal;
 3. classify stored hosts/counts/dates;
 4. distinguish valid historical audio, stale historical audio, no audio, and newly resolved provider audio in the eventual policy;
-5. after provider selection, resolve or validate lazily on access and replace an old value only when a new provider result is valid;
+5. resolve missing audio lazily on access and replace an old value only when a new Merriam-Webster result is valid;
 6. clear a value only after confirmed failure and an approved policy, or when a reviewed host-specific retirement rule applies.
 
 Lazy refresh minimizes production load, cost, and destructive data changes. A bulk clear is reasonable only if the audit proves all non-null values belong to a retired provider and product accepts immediate loss. Backfill is optional and should be rate/cost/licensing controlled; it need not block support for newly looked-up words. No schema migration is required for simple replacement URLs, but provider provenance, stable reference keys, validation timestamps, or failure state would require a separately reviewed model/migration decision.
 
-## 13. Proposed Audio-Provider Requirements
+## 13. Selected Provider Constraints
 
-Provider selection is the first implementation-planning activity, or a short comparison immediately before planning. Do not select a provider from this repository analysis alone. It must offer:
+Merriam-Webster meets the core technical requirement for documented English pronunciation audio metadata and MP3 media delivery. Implementation must still verify and enforce:
 
 - English pronunciation audio;
 - stable HTTPS media or a supported playback endpoint;
@@ -285,6 +297,6 @@ The provider migration directly changed audio population, while the stale-data a
 
 ## 19. Implementation-Planning Readiness
 
-The former blocker—external WordsAPI capability verification—is resolved: the current documented contract does not expose playable audio media. No other architectural question prevents planning. Selecting a dedicated audio provider, confirming its licensing/authentication/delivery constraints, and using the production audit to refine the legacy-data policy can safely be explicit early activities in the implementation plan.
+The former blocker—external WordsAPI capability verification—is resolved, and Merriam-Webster Collegiate is selected as the audio-only provider. No other architectural question prevents planning. Confirming applicable Merriam-Webster licensing/branding obligations before production and using the production audit to refine the legacy-data policy are explicit implementation/deployment checkpoints rather than planning blockers.
 
 READY FOR IMPLEMENTATION PLANNING
