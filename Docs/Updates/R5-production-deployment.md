@@ -482,3 +482,11 @@ Final status: **FULLY VERIFIED / COMPLETE**
 Final production sign-off: R5 production deployment and verification complete.
 
 Notes: Login initially returned HTTP 401 because `ConnectionStrings__DefaultConnection` was absent from the application-pool environment. The variable was added securely and the site restarted, after which login passed. Temporary stdout logging was enabled for diagnosis and was subsequently returned to `stdoutLogEnabled="false"`. The deployment incident required no rollback and did not invalidate the successfully verified R5 migration.
+
+### Final Repository Closeout — 2026-09-01
+
+R5 remains **FULLY VERIFIED / COMPLETE** in production. Production enforces unique `(UserId, WordId)` identity; `PartOfSpeechId` remains synchronized compatibility state rather than identity. Duplicate saves are idempotent, preferred-definition updates mutate the existing entry in place, the final orphan counts remain `OrphanQuizResults = 0` and `OrphanSampleSentences = 0`, stdout diagnostic logging is disabled, and no rollback was required.
+
+Git verification found implementation commit `3b89cb2330df28d3f7bbc1305e92f1a18f2b6190` and deployment-verification commit `3a198ff25b49f278e7bac0fc66570e00ba59fe05` on `r5/correct-userword-identity`. At verification time, both local `master` and the read-only queried remote `origin/master` pointed to `a243ba577ec6e72f05f0e6d3b07c6ffed952a0ec`; neither R5 commit was an ancestor of that `master` ref. Therefore the supplied statement that R5 had been merged to master was **not confirmed by Git evidence** and requires the branch to be merged or the intended master remote/ref to be clarified. This repository-state discrepancy does not change the completed production verification.
+
+Post-R5 audio behavior was identified as a separate dictionary-provider/audio concern and is tracked independently from R5 in `Docs/Updates/Audio-analysis.md`.
