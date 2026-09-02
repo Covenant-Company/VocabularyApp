@@ -85,3 +85,9 @@ __pycache__/
 *.pyc
 Docs/R2-Password-Hashing-Analysis.md
 Docs/R2-Password-Hashing-Implementation-Plan.md
+
+# Generated deployment artifacts
+VocabularyApp.WebApi/R5-Deploy/
+VocabularyApp.WebApi/R5-Deploy.zip
+VocabularyApp.WebApi/R5-wwwroot.zip
+VocabularyApp.WebApi/wwwroot/
