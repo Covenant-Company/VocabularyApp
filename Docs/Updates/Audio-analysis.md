@@ -8,7 +8,7 @@ Older cached words may still show Play because `AudioUrl` is a nullable, persist
 
 Old playback can fail because the browser loads the stored external URL directly and the application neither validates it beforehand nor clears it after failure. Playback rejection is caught, logged only to the console, and followed by browser speech synthesis (`word-lookup.component.ts:424-485`). The exact production failure—404, authorization/hotlink rejection, TLS, redirect, media format, network policy, or another cause—is not proven without inspecting the stored hosts and browser/network error.
 
-Recommended next step: run the read-only production audio audit in section 7, then verify whether the current WordsAPI subscription/API offers stable pronunciation media. Until that provider capability is verified, retain WordsAPI definitions, treat stored URLs as untrusted, and plan a small provider-migration follow-up that gives playback a visible failure state. Do not change R5.
+External provider verification now establishes that the current documented WordsAPI contract exposes pronunciation/IPA text, including through `GET /words/{word}/pronunciation`, but does not expose a playable audio URL, media file, or audio stream. The smallest reliable direction is therefore to retain WordsAPI for definitions and lexical data, select a dedicated pronunciation-audio provider during implementation planning, preserve historical URLs pending audit, and make playback failures visible and nonfatal. Do not change R5.
 
 ## 2. Current Audio Architecture
 
@@ -83,109 +83,140 @@ Synchronous construction errors and rejected `play()` promises are caught. Both 
 
 Potential failure classes include a removed/stale URL, 403/hotlink policy, redirect/authentication requirements, unsupported content type/codec, TLS/certificate failure, CSP or other browser policy, and network failure. Mixed content is partially mitigated by rewriting HTTP to HTTPS, but that rewrite can itself fail when the host has no equivalent HTTPS resource. Direct cross-origin media can play without exposing media bytes to application code in many cases; CORS is more critical for credentialed access or programmatic media processing. Still, provider cross-origin/hotlink policies can prevent loading. The current code does not establish which class caused the observed production failures.
 
-## 7. Existing Database Audio Data
+## 7. Read-Only Production Audio Audit
 
 No production query or mutation was performed. Run these read-only queries against the confirmed production database:
 
 ```sql
--- Counts and age range for persisted audio references.
-SELECT
-    COUNT_BIG(*) AS TotalWords,
-    SUM(CASE WHEN AudioUrl IS NOT NULL AND LEN(LTRIM(RTRIM(AudioUrl))) > 0 THEN 1 ELSE 0 END) AS WordsWithAudioUrl,
-    SUM(CASE WHEN AudioUrl IS NULL OR LEN(LTRIM(RTRIM(AudioUrl))) = 0 THEN 1 ELSE 0 END) AS WordsWithoutAudioUrl,
-    MIN(CASE WHEN AudioUrl IS NOT NULL AND LEN(LTRIM(RTRIM(AudioUrl))) > 0 THEN CreatedAt END) AS OldestAudioRow,
-    MAX(CASE WHEN AudioUrl IS NOT NULL AND LEN(LTRIM(RTRIM(AudioUrl))) > 0 THEN CreatedAt END) AS NewestAudioRow
-FROM dbo.Words;
-
--- Stored rows, without joining user-owned data.
-SELECT Id, Text, AudioUrl, CreatedAt, LastUpdatedFromApi
+-- A. Total words with a populated AudioUrl.
+SELECT COUNT_BIG(*) AS WordsWithAudioUrl
 FROM dbo.Words
 WHERE AudioUrl IS NOT NULL
-  AND LEN(LTRIM(RTRIM(AudioUrl))) > 0
-ORDER BY CreatedAt, Id;
+  AND LEN(LTRIM(RTRIM(AudioUrl))) > 0;
 
--- Distinct host-like values. Review relative/other values separately.
-WITH Parsed AS
+-- B. Total words with AudioUrl NULL (blank values are reported separately).
+SELECT COUNT_BIG(*) AS WordsWithNullAudioUrl
+FROM dbo.Words
+WHERE AudioUrl IS NULL;
+
+SELECT COUNT_BIG(*) AS WordsWithBlankAudioUrl
+FROM dbo.Words
+WHERE AudioUrl IS NOT NULL
+  AND LEN(LTRIM(RTRIM(AudioUrl))) = 0;
+
+-- C. Recently inserted words with AudioUrl NULL.
+SELECT TOP (100) Id AS WordId, Text, AudioUrl, CreatedAt
+FROM dbo.Words
+WHERE AudioUrl IS NULL
+ORDER BY CreatedAt DESC, Id DESC;
+
+-- D and E. Distinct host/domain values and counts by host/domain.
+-- Invalid or relative values are grouped instead of causing parsing failures.
+WITH HostValues AS
 (
     SELECT CASE
-        WHEN AudioUrl LIKE '%://%' THEN
-            SUBSTRING(AudioUrl, CHARINDEX('://', AudioUrl) + 3, 500)
+        WHEN AudioUrl LIKE '%://%' THEN SUBSTRING(AudioUrl, CHARINDEX('://', AudioUrl) + 3, 500)
         WHEN AudioUrl LIKE '//%' THEN SUBSTRING(AudioUrl, 3, 500)
         ELSE NULL
     END AS HostAndPath
     FROM dbo.Words
     WHERE AudioUrl IS NOT NULL
       AND LEN(LTRIM(RTRIM(AudioUrl))) > 0
+), ParsedHosts AS
+(
+    SELECT CASE
+        WHEN HostAndPath IS NULL OR HostAndPath = '' THEN '[MALFORMED_OR_RELATIVE]'
+        ELSE LOWER(LEFT(HostAndPath, CHARINDEX('/', HostAndPath + '/') - 1))
+    END AS AudioHost
+    FROM HostValues
 )
-SELECT
-    LOWER(CASE WHEN CHARINDEX('/', HostAndPath + '/') > 0
-        THEN LEFT(HostAndPath, CHARINDEX('/', HostAndPath + '/') - 1)
-        ELSE HostAndPath END) AS AudioHost,
-    COUNT_BIG(*) AS UrlCount
-FROM Parsed
-GROUP BY LOWER(CASE WHEN CHARINDEX('/', HostAndPath + '/') > 0
-    THEN LEFT(HostAndPath, CHARINDEX('/', HostAndPath + '/') - 1)
-    ELSE HostAndPath END)
+SELECT AudioHost, COUNT_BIG(*) AS UrlCount
+FROM ParsedHosts
+GROUP BY AudioHost
 ORDER BY UrlCount DESC, AudioHost;
 
--- Recent words that have no usable audio reference.
-SELECT TOP (100) Id, Text, CreatedAt, LastUpdatedFromApi
+-- F. Sample populated rows. The entity key Id is aliased as WordId.
+SELECT TOP (100) Id AS WordId, Text, AudioUrl, CreatedAt
 FROM dbo.Words
-WHERE AudioUrl IS NULL OR LEN(LTRIM(RTRIM(AudioUrl))) = 0
+WHERE AudioUrl IS NOT NULL
+  AND LEN(LTRIM(RTRIM(AudioUrl))) > 0
 ORDER BY CreatedAt DESC, Id DESC;
 ```
 
 These establish volume, dates, and hosts but do not test URL reachability. Any later validation should avoid leaking full URLs if they contain tokens and should respect provider terms/rate limits.
 
-## 8. Provider Capability Assessment
+## 8. External WordsAPI Capability Verification
 
-Repository-confirmed: the currently modeled `/words/{word}` response supplies pronunciation **text** through `Pronunciation`; the application contract models no pronunciation media and deliberately stores null audio (`WordsApiDtos.cs:5-17`; `WordService.cs:142-153`).
+External provider documentation has now been verified. The current production base URL remains `https://wordsapiv1.p.rapidapi.com`. WordsAPI supports the full lookup `GET /words/{word}` and the dedicated `GET /words/{word}/pronunciation` endpoint. Its documented pronunciation capability is pronunciation/IPA/phonetic text.
 
-Not repository-confirmed: whether the current WordsAPI/RapidAPI product, subscription tier, another endpoint, or a newer response version provides stable pronunciation audio suitable for storage or playback.
+Supported by WordsAPI:
 
-**Requires external provider documentation verification.** Check the current official contract and subscribed plan for:
+- definitions and lexical results;
+- pronunciation/IPA text in the documented full-word response;
+- a dedicated pronunciation endpoint.
 
-1. whether `/words/{word}` or a dedicated endpoint returns an audio/media URL or binary pronunciation;
-2. response field and endpoint stability;
-3. authentication requirements for browser playback versus server retrieval;
-4. URL lifetime and caching/redistribution rights;
-5. rate limits and cost for lookup, backfill, or proxying;
-6. supported dialects/voices and missing-audio behavior.
+Not present in the current documented contract:
+
+- a playable pronunciation-audio URL;
+- MP3, WAV, or other audio media;
+- a pronunciation audio stream or another directly playable browser resource.
+
+Therefore, **WordsAPI currently exposes pronunciation/IPA information but no documented playable audio-media URL/resource**. This conclusion is limited to the current documented contract; it does not claim that WordsAPI can never add audio later. It also agrees with the repository contract, which models pronunciation text, models no WordsAPI media field, and deliberately stores null audio for new words (`WordsApiDtos.cs:5-17`; `WordService.cs:142-153`).
 
 ## 9. Fix Options
 
 | Option | Benefits | Risks | Scope | Recommendation |
 |---|---|---|---|---|
-| A — WordsAPI definitions plus a separate audio provider | Decouples definitions from audio; can choose a provider designed for media. | New dependency/key/cost, word matching, rate limits, licensing, cache invalidation, and provider outages. | Backend client/mapping/cache policy; Angular failure UX; possibly provenance/validation fields. Migration not inherently required. | Strong candidate if WordsAPI has no suitable media; verify provider terms first. |
-| B — Use a WordsAPI audio capability | One vendor and existing authentication/billing; potentially smallest backend change. | Capability is unverified; URLs may require auth, expire, disallow browser use, or add cost. | Provider DTO/client and tests; Angular error UX; optional refresh/backfill. | Preferred only if official current documentation confirms stable playable media and acceptable terms. |
-| C — Disable stale stored audio and show no Play until supported | Smallest reliable behavior; eliminates misleading dead controls and calls to unknown hosts. | Removes audio for rows that might still work; speech-synthesis button is currently also hidden when URL is null. | Backend/UI policy plus optional read-only audit and separately approved cleanup. No schema change. | Safest immediate containment; do not bulk-clear until host/count audit and approval. |
-| D — Backend proxy/cache for audio | Same-origin playback, centralized authentication/validation, better observability and stable app URLs. | Highest operational/security/cost burden; bandwidth, storage, SSRF controls, licensing, range requests, content validation. | New backend endpoint/service/cache, configuration, monitoring, Angular URL use; DB/storage design may change. | Consider only if provider authentication/CORS/lifetime makes direct playback unreliable and terms permit caching/proxying. |
-| E — Store a provider/key reference instead of external URL | Avoids persisted expiring URLs; enables resolution/refresh and provenance. | Requires provider coupling and a request at playback/refresh; provider changes still need handling. | Model/API changes and likely migration/backfill if persisted; backend resolver and Angular contract. | Good longer-term design if chosen provider exposes stable pronunciation IDs; excessive for an unverified source. |
+| A — WordsAPI plus a separate audio provider | Decouples lexical data from playable media. | Adds a dependency, matching policy, limits, cost, licensing, and outage handling. | Backend client/cache policy and Angular failure UX; migration is not inherently required. | **Recommended primary direction.** Select the provider during implementation planning. |
+| B — Use WordsAPI directly for audio | Would retain one vendor. | The current documented contract exposes no playable resource. | Not presently actionable. | **Do not recommend** unless new direct, current evidence proves playable WordsAPI media; no such repository evidence exists. |
+| C — Show no audio button when no usable source exists | Truthful and consistent with current null behavior. | Temporarily provides no recorded audio. | Small Angular availability/failure UX change; no cleanup required. | Appropriate interim behavior; do not discard historical values that may still work. |
+| D — Dedicated provider with backend proxy/cache | Supports authenticated or short-lived media and centralizes policy. | Adds bandwidth, storage, SSRF, range, validation, licensing, and operational burdens. | Backend media endpoint/cache and Angular contract; storage design may change. | Use only if direct HTTPS playback is unsuitable and terms permit it. |
+| E — Store a stable pronunciation reference | Avoids fragile or expiring URLs and enables resolution/refresh. | Couples resolution to a provider and may require persistence changes. | Provider-dependent resolver and possibly a migration. | Prefer when the selected provider supplies stable IDs; do not force it before selection. |
 
-The smallest reliable sequence is C as containment/UX correction, then B if WordsAPI documentation supports it; otherwise A. Add D only when direct media delivery is demonstrably unsuitable. E is justified only with a stable provider identifier.
+The smallest reliable solution consistent with the current architecture is A with C's truthful UI behavior: retain WordsAPI, add one backend client for a dedicated audio source, keep the existing audio response contract where practical, and handle playback failure in Angular. Add D only if direct delivery is demonstrably unsuitable. Use E when the selected provider offers a stable reference safer than storing its URLs.
 
-## 10. Recommended Target Behavior
+## 10. Recommended Architecture Direction
+
+Keep WordsAPI responsible for definitions and lexical data. Its IPA/pronunciation text may continue to be captured or displayed separately, but it must not be treated as playable audio. Add a dedicated pronunciation-audio provider for recorded audio, with credentials and provider lookup kept in the backend so Angular never needs a secret. Do not revert to DictionaryAPI.dev merely to regain audio unless a later provider comparison establishes it as the best reliable source.
+
+This separation is safer because dictionary changes cannot silently redefine the audio contract, each provider is evaluated against its actual capability and terms, audio-specific failure/rate/cache policy stays isolated, and the existing lexical lookup remains stable. Preserve historical URLs until the audit classifies them; treat them as untrusted legacy references and replace them only when newly resolved audio is valid.
+
+## 11. Recommended Target Behavior
 
 - Show Play only when the application has a nonblank audio reference that is supported by the selected provider policy.
-- If no media exists, omit Play. If product wants speech synthesis to remain available, label it separately rather than presenting it as provider-recorded pronunciation.
+- If no media exists, omit Play. WordsAPI IPA text alone must never cause Play to appear. If IPA is surfaced, display it separately from the audio control. If product wants speech synthesis to remain available, label it separately rather than presenting it as provider-recorded pronunciation.
 - On playback rejection, show a short non-blocking message such as “Pronunciation audio is unavailable,” then optionally offer/use speech synthesis.
 - Disable the failed Play control for the current displayed word to prevent repeated failing requests; do not mutate the database from the browser failure alone.
 - Treat historical and new URLs through the same validation/failure policy, while using stored provider provenance if a future model adds it.
 - Keep lookup, save, favorites, preferred definitions, and quiz behavior unchanged.
 
-## 11. Data Cleanup / Backfill Strategy
+## 12. Historical Audio Strategy
 
 Do not bulk-clear or backfill before running the section 7 audit and selecting a supported provider. The safest initial strategy is:
 
 1. leave existing values untouched during analysis;
 2. make playback failure visible and nonfatal;
 3. classify stored hosts/counts/dates;
-4. after provider selection, refresh audio lazily on the next canonical lookup or through an explicit rate-limited maintenance job;
-5. clear a stored value only after a trusted validation result or when a reviewed host-specific retirement rule applies.
+4. distinguish valid historical audio, stale historical audio, no audio, and newly resolved provider audio in the eventual policy;
+5. after provider selection, resolve or validate lazily on access and replace an old value only when a new provider result is valid;
+6. clear a value only after confirmed failure and an approved policy, or when a reviewed host-specific retirement rule applies.
 
 Lazy refresh minimizes production load, cost, and destructive data changes. A bulk clear is reasonable only if the audit proves all non-null values belong to a retired provider and product accepts immediate loss. Backfill is optional and should be rate/cost/licensing controlled; it need not block support for newly looked-up words. No schema migration is required for simple replacement URLs, but provider provenance, stable reference keys, validation timestamps, or failure state would require a separately reviewed model/migration decision.
 
-## 12. API / Backend Impact
+## 13. Proposed Audio-Provider Requirements
+
+Provider selection is the first implementation-planning activity, or a short comparison immediately before planning. Do not select a provider from this repository analysis alone. It must offer:
+
+- English pronunciation audio;
+- stable HTTPS media or a supported playback endpoint;
+- a browser-compatible format;
+- reliable word lookup and predictable not-found behavior;
+- acceptable rate limits and production reliability;
+- clear licensing, usage, storage, redistribution, proxy, and caching terms;
+- reasonable cost or free-tier capacity for current VocabularyApp usage;
+- backend-compatible authentication that never exposes secrets in Angular.
+
+## 14. API / Backend Impact
 
 A future implementation will need a typed audio-source contract rather than another implicit URL assignment. Depending on the selected option:
 
@@ -200,11 +231,11 @@ A future implementation will need a typed audio-source contract rather than anot
 
 No R5 identity, `UserWord`, preferred-definition, or quiz schema change is implicated.
 
-## 13. Angular Impact
+## 15. Angular Impact
 
 The existing model and conditional button can remain with small changes. Add component state for playback-in-progress/failure, a user-visible non-blocking error, and tests around `Audio.play()` rejection. Decide explicitly whether speech synthesis is an automatic fallback or a separately labeled action. Avoid permanently hiding or clearing server data solely from one transient browser failure. Ensure both lookup and vocabulary-detail mapping carry the same audio property (`word-lookup.component.ts:135-170,199-213`).
 
-## 14. Test Plan
+## 16. Test Plan
 
 Backend tests:
 
@@ -232,7 +263,7 @@ Angular tests:
 
 Production smoke testing should cover one newly looked-up uncached word and one audited old cached word. Verify button visibility, audible playback or explicit no-audio behavior, failure messaging, browser console/network response, and that no canonical/user data changes unexpectedly.
 
-## 15. Risks and Edge Cases
+## 17. Risks and Edge Cases
 
 - Provider URLs may expire, redirect, require headers, or prohibit storage/proxying.
 - Browser autoplay rules may reject `play()` even when media is valid; a direct user click usually helps but is not absolute.
@@ -246,14 +277,14 @@ Production smoke testing should cover one newly looked-up uncached word and one 
 - Speech synthesis is device/browser dependent and is not equivalent to provider-recorded pronunciation.
 - Direct vocabulary-search mapping currently omits `audioUrl`, creating a potential inconsistent UI path.
 
-## 16. Scope Recommendation
+## 18. Scope Recommendation
 
-Track this as a **provider-migration follow-up**, not R5 and not merely an isolated Angular bug. Recommended title: **Restore Pronunciation Audio**. If the project requires a remediation identifier, assign the next unreserved identifier during planning rather than reusing R5.
+Track this as a **provider-migration follow-up**, not R5 and not merely an isolated Angular bug. Recommended title: **Restore Pronunciation Audio**. This is not R5, this is not a database-identity issue, and it is follow-up work from the DictionaryAPI.dev → WordsAPI provider transition. If the project requires a remediation identifier, assign the next unreserved identifier during planning rather than reusing R5.
 
 The provider migration directly changed audio population, while the stale-data and failure-UX work spans provider mapping, caching policy, backend response behavior, Angular playback, and production data assessment. That scope is larger than a one-line UI fix but does not require reopening canonical word identity.
 
-## 17. Implementation-Planning Readiness
+## 19. Implementation-Planning Readiness
 
-The exact unanswered question is whether the current subscribed WordsAPI/RapidAPI contract offers stable pronunciation media that may be cached or played by this application, through which endpoint/field, with what authentication, URL lifetime, licensing, rate limit, and cost. The production host/count audit is also needed to choose a safe historical-data policy.
+The former blocker—external WordsAPI capability verification—is resolved: the current documented contract does not expose playable audio media. No other architectural question prevents planning. Selecting a dedicated audio provider, confirming its licensing/authentication/delivery constraints, and using the production audit to refine the legacy-data policy can safely be explicit early activities in the implementation plan.
 
-NOT READY FOR IMPLEMENTATION PLANNING
+READY FOR IMPLEMENTATION PLANNING
