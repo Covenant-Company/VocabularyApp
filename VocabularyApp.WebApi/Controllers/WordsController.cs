@@ -41,7 +41,10 @@ namespace VocabularyApp.WebApi.Controllers
                     userId = parsedUserId;
                 }
 
-                var result = await _wordService.LookupWordAsync(word, userId);
+                var result = await _wordService.LookupWordAsync(
+                    word,
+                    userId,
+                    HttpContext.RequestAborted);
                 if (!result.IsSuccess)
                 {
                     var error = new

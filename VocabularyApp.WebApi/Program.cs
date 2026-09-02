@@ -75,6 +75,33 @@ builder.Services.AddHttpClient<IWordService, WordService>(client =>
     }
 });
 
+var merriamWebsterOptions = builder.Configuration
+    .GetSection(MerriamWebsterOptions.SectionName)
+    .Get<MerriamWebsterOptions>()
+    ?? new MerriamWebsterOptions();
+builder.Services.AddSingleton(merriamWebsterOptions);
+builder.Services
+    .AddHttpClient<IPronunciationAudioService, MerriamWebsterPronunciationService>(client =>
+    {
+        var baseUrl = Uri.TryCreate(
+            merriamWebsterOptions.BaseUrl,
+            UriKind.Absolute,
+            out var configuredBaseUrl) && configuredBaseUrl.Scheme == Uri.UriSchemeHttps
+            ? new Uri(configuredBaseUrl.AbsoluteUri.TrimEnd('/') + "/")
+            : new Uri(MerriamWebsterOptions.DefaultBaseUrl);
+        var timeoutSeconds = Math.Clamp(
+            merriamWebsterOptions.TimeoutSeconds,
+            1,
+            30);
+
+        client.BaseAddress = baseUrl;
+        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    })
+    // The provider contract places the secret in the query string. Suppress the
+    // default HttpClient request logger so it cannot record that URI.
+    .RemoveAllLoggers();
+
 builder.Services.AddControllers();
 
 builder.Services.AddEndpointsApiExplorer();

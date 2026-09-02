@@ -32,13 +32,14 @@ public static class IntegrationTestSeeder
         VocabularyAppWebApplicationFactory factory,
         string text,
         string definition,
-        string partOfSpeechName = "Noun")
+        string partOfSpeechName = "Noun",
+        string? audioUrl = null)
     {
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var partOfSpeech = await context.PartsOfSpeech
             .SingleAsync(candidate => candidate.Name == partOfSpeechName);
-        var word = new Word { Text = text };
+        var word = new Word { Text = text, AudioUrl = audioUrl };
         context.Words.Add(word);
         await context.SaveChangesAsync();
 

@@ -10,6 +10,9 @@ namespace VocabularyApp.WebApi.Tests.Integration;
 
 public sealed class DictionaryLookupApiTests
 {
+    private const string ResolvedAudioUrl =
+        "https://media.merriam-webster.com/audio/prons/en/us/mp3/t/test0001.mp3";
+
     [Fact]
     public async Task CacheHitReturnsPersistedWordWithoutProviderRequest()
     {
@@ -23,6 +26,47 @@ public sealed class DictionaryLookupApiTests
         Assert.True(lookup.WasFoundInCache);
         Assert.Equal(wordText, lookup.Word?.Text);
         Assert.Empty(factory.DictionaryHandler.Requests);
+    }
+
+    [Fact]
+    public async Task CacheHitWithHistoricalAudioPreservesItAndSkipsAudioProvider()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("historical-audio");
+        const string historicalUrl = "https://legacy.example.test/audio/word.mp3";
+        await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, wordText, "Cached definition", audioUrl: historicalUrl);
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(historicalUrl, lookup.Word?.AudioUrl);
+        Assert.Empty(factory.PronunciationAudioService.Requests);
+    }
+
+    [Fact]
+    public async Task CacheHitWithMissingAudioResolvesAndPersistsAudio()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("cached-audio");
+        await IntegrationTestSeeder.SeedWordWithDefinitionAsync(
+            factory, wordText, "Cached definition");
+        factory.PronunciationAudioService.RegisterAudioUrl(wordText, ResolvedAudioUrl);
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ResolvedAudioUrl, lookup.Word?.AudioUrl);
+        Assert.Single(factory.PronunciationAudioService.Requests);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(ResolvedAudioUrl,
+            await context.Words.Where(word => word.Text == wordText)
+                .Select(word => word.AudioUrl).SingleAsync());
     }
 
     [Fact]
@@ -48,6 +92,49 @@ public sealed class DictionaryLookupApiTests
             Assert.Equal("Provider definition", definition.Definition);
             Assert.Equal("Provider example", definition.Example);
         });
+    }
+
+    [Fact]
+    public async Task CacheMissPersistsLexicalDataWhenAudioProviderFails()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("optional-audio");
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK,
+            ProviderJson(wordText, "noun", "Provider definition"));
+        factory.PronunciationAudioService.RegisterException(
+            wordText, new HttpRequestException("Simulated audio failure."));
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(lookup.Word?.AudioUrl);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.True(await context.Words.AnyAsync(word => word.Text == wordText));
+    }
+
+    [Fact]
+    public async Task CacheMissResolvesAndPersistsAudioWithLexicalData()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        var wordText = UniqueWord("new-audio");
+        RegisterProviderResponse(factory, wordText, HttpStatusCode.OK,
+            ProviderJson(wordText, "noun", "Provider definition"));
+        factory.PronunciationAudioService.RegisterAudioUrl(wordText, ResolvedAudioUrl);
+        using var authenticated = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+
+        using var response = await authenticated.Client.GetAsync($"/api/words/lookup/{wordText}");
+        var lookup = ReadData<WordLookupResponse>(await response.Content.ReadAsStringAsync());
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(ResolvedAudioUrl, lookup.Word?.AudioUrl);
+        using var scope = factory.Services.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(ResolvedAudioUrl,
+            await context.Words.Where(word => word.Text == wordText)
+                .Select(word => word.AudioUrl).SingleAsync());
     }
 
     [Fact]

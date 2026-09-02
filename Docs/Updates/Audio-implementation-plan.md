@@ -439,6 +439,90 @@ Merriam-Webster's current FAQ describes limited free non-commercial access and b
 - [ ] Licensing/branding checkpoint is completed before production enablement.
 - [ ] Production smoke tests and rollback readiness are confirmed.
 
+## Implementation Results
+
+Implementation completed on branch `fix-audio-pronunciation` without changing the approved architecture.
+
+### Files Changed
+
+Backend production files:
+
+- `VocabularyApp.WebApi/Configuration/MerriamWebsterOptions.cs`
+- `VocabularyApp.WebApi/DTOs/External/MerriamWebsterDtos.cs`
+- `VocabularyApp.WebApi/Services/IPronunciationAudioService.cs`
+- `VocabularyApp.WebApi/Services/MerriamWebsterPronunciationService.cs`
+- `VocabularyApp.WebApi/Services/IWordService.cs`
+- `VocabularyApp.WebApi/Services/WordService.cs`
+- `VocabularyApp.WebApi/Controllers/WordsController.cs`
+- `VocabularyApp.WebApi/Program.cs`
+- `VocabularyApp.WebApi/appsettings.json`
+- `VocabularyApp.WebApi/appsettings.Development.json`
+
+Backend test files:
+
+- `VocabularyApp.WebApi.Tests/Infrastructure/ControllablePronunciationAudioService.cs`
+- `VocabularyApp.WebApi.Tests/Infrastructure/IntegrationTestSeeder.cs`
+- `VocabularyApp.WebApi.Tests/Infrastructure/VocabularyAppWebApplicationFactory.cs`
+- `VocabularyApp.WebApi.Tests/Integration/DictionaryLookupApiTests.cs`
+- `VocabularyApp.WebApi.Tests/Services/MerriamWebsterPronunciationServiceTests.cs`
+
+Angular files:
+
+- `VocabularyApp.UI/src/app/components/word-lookup/word-lookup.component.ts`
+- `VocabularyApp.UI/src/app/components/word-lookup/word-lookup.component.html`
+- `VocabularyApp.UI/src/app/components/word-lookup/word-lookup.component.spec.ts`
+
+Documentation:
+
+- `Docs/Updates/Audio-implementation-plan.md`
+
+### Provider, Configuration, and URL Construction
+
+- Added provider-neutral `IPronunciationAudioService` and `MerriamWebsterPronunciationService` using a separate typed `HttpClient`.
+- Added minimal DTOs for `meta.id`, `meta.stems`, `hwi.hw`, `hwi.prs[]`, and `sound.audio`.
+- Added `MerriamWebster:BaseUrl`, blank `ApiKey`, and `TimeoutSeconds` configuration. No real secret was added. Local secrets remain supported through the existing .NET User Secrets ID.
+- Suppressed the typed client's default request logger because Merriam-Webster requires the key in the query string. Application logs never include the request URI or key.
+- Implemented the verified English MP3 URL shape `https://media.merriam-webster.com/audio/prons/en/us/mp3/{subdirectory}/{audio}.mp3` with documented precedence: `bix`, `gg`, `number` for numeric/punctuation prefixes, otherwise lowercase first letter.
+- Audio identifiers are restricted to a narrow filename character set and cannot supply paths, traversal, query strings, fragments, or arbitrary hosts.
+
+### Lookup, Cache, and Failure Behavior
+
+- Existing nonblank `Word.AudioUrl` is returned unchanged and skips Merriam-Webster.
+- Cached words with null/blank audio attempt lazy resolution and save only a newly resolved valid URL.
+- New WordsAPI-backed words attempt optional audio resolution and include a successful URL in the existing lexical save.
+- Missing configuration, suggestions, non-matches, no pronunciation, invalid metadata, 4xx/429, 5xx, timeout, network, and JSON failures return null audio without changing successful dictionary semantics.
+- Exact headword/metadata matches rank before provider-declared stem matches; response order and pronunciation order provide deterministic tie-breaking.
+- Request cancellation propagates from `WordsController` through `IWordService` to audio lookup.
+- No public route or response DTO changed. WordsAPI remains authoritative for lexical data.
+
+### Angular Behavior
+
+- The existing conditional Play button remains visible only for nonblank `audioUrl`.
+- Playback setup/rejection is caught, produces the concise toast “Pronunciation audio is unavailable.”, retains the speech-synthesis fallback, and disables the broken control for the displayed word.
+- Playback failure state resets on the next lookup/detail load.
+- Direct vocabulary-search mapping now carries the already-returned `audioUrl` consistently.
+
+### Verification Results
+
+- Baseline Angular word-lookup component suite before changes: **13 passed, 0 failed**.
+- Initial backend baseline invocation was blocked by missing/corrupted local NuGet artifacts and sandboxed NuGet access; dependencies were restored without changing project package declarations. No application test failure was observed at that checkpoint.
+- Merriam-Webster provider tests: **22 passed, 0 failed**.
+- Focused dictionary/audio integration tests: **18 passed, 0 failed**.
+- Focused Angular word-lookup suite: **17 passed, 0 failed**.
+- Full backend suite: **192 passed, 0 failed**.
+- Full Angular suite: **23 passed, 7 failed**. All seven failures are unrelated pre-existing test problems outside this remediation: missing `HttpClient` providers in signup/login/dashboard/API/auth specs and stale `AppComponent` title expectations. They were not modified.
+- .NET Release solution build: **passed, 0 warnings, 0 errors**.
+- Angular production build: **passed** with the existing `word-lookup.component.scss` budget warning (2.80 kB against 2.05 kB).
+
+### Deviations and Remaining Steps
+
+- No architecture deviation was required.
+- A small options class was used, as allowed by the plan.
+- Negative-result caching was not added; this preserves the planned small schema-free implementation.
+- **NO DATABASE MIGRATION WAS REQUIRED.** No migration or database state was changed.
+- Live local provider/audio verification was not performed because no Merriam-Webster developer key was added to the environment during this task. Automated fixtures cover contract, selection, URL construction, persistence, failure isolation, UI playback, duplicate save, and preferred-definition regressions.
+- Production-only work remains: verify licensing/branding, configure `MerriamWebster__ApiKey` in SmarterASP Pool Manager, deploy through the approved process, and execute production smoke tests. Production was not modified by this implementation.
+
 ## 26. Implementation Readiness
 
 The repository provides the required persistence and API/UI contracts; Merriam-Webster's response fields and MP3 directory rules are documented; the provider, matching policy, cache behavior, security boundary, failure semantics, tests, deployment, and rollback are specified. Licensing/branding verification is mandatory before production enablement but does not block coding or non-production testing with an authorized developer key.

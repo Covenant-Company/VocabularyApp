@@ -14,16 +14,25 @@ namespace VocabularyApp.WebApi.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly HttpClient _http;
+        private readonly IPronunciationAudioService _pronunciationAudioService;
         private readonly ILogger<WordService> _logger;
 
-        public WordService(ApplicationDbContext db, HttpClient http, ILogger<WordService> logger)
+        public WordService(
+            ApplicationDbContext db,
+            HttpClient http,
+            IPronunciationAudioService pronunciationAudioService,
+            ILogger<WordService> logger)
         {
             _db = db;
             _http = http;
+            _pronunciationAudioService = pronunciationAudioService;
             _logger = logger;
         }
 
-        public async Task<ServiceResult<object>> LookupWordAsync(string term, int? userId = null)
+        public async Task<ServiceResult<object>> LookupWordAsync(
+            string term,
+            int? userId = null,
+            CancellationToken cancellationToken = default)
         {
             if (string.IsNullOrWhiteSpace(term))
                 return ServiceResult<object>.Failure("Word is required.");
@@ -41,6 +50,7 @@ namespace VocabularyApp.WebApi.Services
 
                 if (word != null)
                 {
+                    await TryResolveMissingAudioAsync(word, cancellationToken);
                     var dto = MapToDto(word);
 
                     // Check if word is in user's vocabulary
@@ -151,6 +161,9 @@ namespace VocabularyApp.WebApi.Services
                     Pronunciation = pronunciation,
                     AudioUrl = null
                 };
+                newWord.AudioUrl = await ResolveAudioSafelyAsync(
+                    newWord.Text,
+                    cancellationToken);
                 _db.Words.Add(newWord);
 
                 // Insert definitions
@@ -207,6 +220,51 @@ namespace VocabularyApp.WebApi.Services
             ServiceResult<object>.Failure(
                 "Dictionary service is temporarily unavailable. Please try again.",
                 ServiceFailureType.ServiceUnavailable);
+
+        private async Task TryResolveMissingAudioAsync(
+            Word word,
+            CancellationToken cancellationToken)
+        {
+            if (!string.IsNullOrWhiteSpace(word.AudioUrl))
+            {
+                return;
+            }
+
+            var resolvedUrl = await ResolveAudioSafelyAsync(
+                word.Text,
+                cancellationToken);
+            if (string.IsNullOrWhiteSpace(resolvedUrl))
+            {
+                return;
+            }
+
+            word.AudioUrl = resolvedUrl;
+            await _db.SaveChangesAsync(cancellationToken);
+        }
+
+        private async Task<string?> ResolveAudioSafelyAsync(
+            string word,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                return await _pronunciationAudioService.GetAudioUrlAsync(
+                    word,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "Optional pronunciation audio resolution failed for '{Word}': {FailureType}",
+                    word,
+                    ex.GetType().Name);
+                return null;
+            }
+        }
 
         public async Task<ServiceResult<object>> AddToVocabularyAsync(int userId, AddWordRequest request)
         {

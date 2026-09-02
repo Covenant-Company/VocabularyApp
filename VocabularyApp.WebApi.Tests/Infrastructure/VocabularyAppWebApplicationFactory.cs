@@ -20,6 +20,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     private readonly SqliteConnection _connection;
 
     public ControllableDictionaryHandler DictionaryHandler { get; } = new();
+    public ControllablePronunciationAudioService PronunciationAudioService { get; } = new();
     public QuizPersistenceFailureInterceptor QuizPersistenceFailure { get; } = new();
     public QuizSubmissionSynchronizationInterceptor QuizSubmissionSynchronization { get; } = new();
     public VocabularySaveSynchronizationInterceptor VocabularySaveSynchronization { get; } = new();
@@ -89,6 +90,8 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
                         VocabularyPersistenceFailure));
 
             services.RemoveAll<IWordService>();
+            services.RemoveAll<IPronunciationAudioService>();
+            services.AddSingleton<IPronunciationAudioService>(PronunciationAudioService);
             services.AddHttpClient<IWordService, WordService>()
                 .ConfigurePrimaryHttpMessageHandler(
                     () => DictionaryHandler);

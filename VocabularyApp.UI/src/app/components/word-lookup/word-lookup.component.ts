@@ -51,6 +51,7 @@ export class WordLookupComponent implements OnInit {
   definitionOptions: DefinitionOption[] = [];
   selectedPreferredDefinitionId: number | null = null;
   activeVocabularyWord: VocabularyItem | null = null;
+  audioPlaybackFailed = false;
   private pronunciationAudio: HTMLAudioElement | null = null;
 
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
@@ -136,6 +137,7 @@ export class WordLookupComponent implements OnInit {
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
+    this.audioPlaybackFailed = false;
 
     this.apiService.get<any>(`/words/vocabulary/search?term=${encodeURIComponent(word)}`).subscribe({
       next: (res) => {
@@ -146,6 +148,7 @@ export class WordLookupComponent implements OnInit {
           const mapped: WordLookupResult = {
             word: userWord.word,
             phonetic: userWord.pronunciation,
+            audioUrl: userWord.audioUrl,
             partOfSpeechGroups: [
               {
                 partOfSpeech: userWord.partOfSpeech || 'unknown',
@@ -186,6 +189,7 @@ export class WordLookupComponent implements OnInit {
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
+    this.audioPlaybackFailed = false;
     this.suggestions = []; // Clear suggestions to show error message if search fails
     this.wordAddedToVocabulary = false; // Reset flag for new word
     if (!fromVocabularyList) {
@@ -422,9 +426,13 @@ export class WordLookupComponent implements OnInit {
   }
 
   playAudio(audioUrl: string): void {
+    if (this.audioPlaybackFailed) {
+      return;
+    }
+
     const normalizedAudioUrl = this.normalizeAudioUrl(audioUrl);
     if (!normalizedAudioUrl) {
-      this.playSpeechSynthesisFallback();
+      this.handleAudioPlaybackFailure();
       return;
     }
 
@@ -439,12 +447,18 @@ export class WordLookupComponent implements OnInit {
 
       this.pronunciationAudio.play().catch(error => {
         console.error('Failed to play pronunciation audio:', error);
-        this.playSpeechSynthesisFallback();
+        this.handleAudioPlaybackFailure();
       });
     } catch (error) {
       console.error('Audio setup failed:', error);
-      this.playSpeechSynthesisFallback();
+      this.handleAudioPlaybackFailure();
     }
+  }
+
+  private handleAudioPlaybackFailure(): void {
+    this.audioPlaybackFailed = true;
+    this.toastService.error('Pronunciation audio is unavailable.');
+    this.playSpeechSynthesisFallback();
   }
 
   private normalizeAudioUrl(audioUrl?: string | null): string | null {

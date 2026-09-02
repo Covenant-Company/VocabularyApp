@@ -27,6 +27,78 @@ describe('WordLookupComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  it('should show Play only when an audio URL is present', () => {
+    component.currentWord = {
+      word: 'test',
+      audioUrl: 'https://media.example.test/test.mp3',
+      source: 'canonical',
+      partOfSpeechGroups: []
+    };
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button[title="Play pronunciation"]')).not.toBeNull();
+
+    component.currentWord = {
+      word: 'silent',
+      source: 'canonical',
+      partOfSpeechGroups: []
+    };
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('button[title="Play pronunciation"]')).toBeNull();
+  });
+
+  it('should play the expected audio URL', () => {
+    const play = jasmine.createSpy('play').and.returnValue(Promise.resolve());
+    const audio = { play, pause: jasmine.createSpy('pause'), currentTime: 0, preload: '' };
+    const audioConstructor = spyOn(window as any, 'Audio').and.returnValue(audio);
+
+    component.playAudio('https://media.example.test/test.mp3');
+
+    expect(audioConstructor).toHaveBeenCalledWith('https://media.example.test/test.mp3');
+    expect(play).toHaveBeenCalled();
+  });
+
+  it('should handle playback failure without crashing and disable the current control', async () => {
+    const play = jasmine.createSpy('play').and.returnValue(Promise.reject(new Error('failed')));
+    const audio = { play, pause: jasmine.createSpy('pause'), currentTime: 0, preload: '' };
+    spyOn(window as any, 'Audio').and.returnValue(audio);
+    spyOn(component.toastService, 'error');
+    component.currentWord = {
+      word: 'test',
+      audioUrl: 'https://media.example.test/broken.mp3',
+      source: 'canonical',
+      partOfSpeechGroups: []
+    };
+
+    component.playAudio(component.currentWord.audioUrl!);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.audioPlaybackFailed).toBeTrue();
+    expect(component.toastService.error).toHaveBeenCalledWith('Pronunciation audio is unavailable.');
+    expect(fixture.nativeElement.querySelector('button[disabled]')).not.toBeNull();
+  });
+
+  it('should reset playback failure for a new dictionary lookup without audio', () => {
+    component.audioPlaybackFailed = true;
+    component.searchNewWord('silent');
+    const request = httpTestingController.expectOne(request =>
+      request.url.endsWith('/words/lookup/silent'));
+    request.flush({
+      success: true,
+      data: {
+        success: true,
+        word: { text: 'silent', audioUrl: null, definitions: [] },
+        wasFoundInCache: false,
+        isInUserVocabulary: false
+      }
+    });
+    fixture.detectChanges();
+
+    expect(component.audioPlaybackFailed).toBeFalse();
+    expect(component.currentWord?.word).toBe('silent');
+    expect(fixture.nativeElement.querySelector('button[title="Play pronunciation"]')).toBeNull();
+  });
+
   it('should clear current word when user starts typing', () => {
     // Setup: Set up a current word and sorted groups
     component.currentWord = {
