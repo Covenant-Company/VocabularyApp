@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
@@ -21,7 +21,7 @@ interface DefinitionOption {
   templateUrl: './word-lookup.component.html',
   styleUrl: './word-lookup.component.scss'
 })
-export class WordLookupComponent implements OnInit {
+export class WordLookupComponent implements OnInit, OnDestroy {
   readonly alphabetLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
   searchTerm = '';
@@ -51,9 +51,6 @@ export class WordLookupComponent implements OnInit {
   definitionOptions: DefinitionOption[] = [];
   selectedPreferredDefinitionId: number | null = null;
   activeVocabularyWord: VocabularyItem | null = null;
-  audioPlaybackFailed = false;
-  private pronunciationAudio: HTMLAudioElement | null = null;
-
   constructor(private apiService: ApiService, private router: Router, public toastService: ToastService) { }
 
   backToDashboard(): void {
@@ -66,8 +63,21 @@ export class WordLookupComponent implements OnInit {
 
   ngOnInit(): void { }
 
+  ngOnDestroy(): void {
+    this.cancelSpeech();
+  }
+
+  get isSpeechSynthesisSupported(): boolean {
+    return typeof window !== 'undefined'
+      && 'speechSynthesis' in window
+      && !!window.speechSynthesis
+      && typeof window.SpeechSynthesisUtterance === 'function';
+  }
+
   onSearchInput(): void {
     this.definitionHighlightTerm = '';
+
+    this.cancelSpeech();
 
     // Clear previous word definition as soon as user starts typing
     if (this.currentWord) {
@@ -134,10 +144,10 @@ export class WordLookupComponent implements OnInit {
 
   viewExistingWord(word: string): void {
     // Fetch word from user's vocabulary using search endpoint
+    this.cancelSpeech();
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
-    this.audioPlaybackFailed = false;
 
     this.apiService.get<any>(`/words/vocabulary/search?term=${encodeURIComponent(word)}`).subscribe({
       next: (res) => {
@@ -186,10 +196,10 @@ export class WordLookupComponent implements OnInit {
   }
 
   searchNewWord(word: string, fromVocabularyList = false): void {
+    this.cancelSpeech();
     this.isLoading = true;
     this.errorMessage = '';
     this.currentWord = null;
-    this.audioPlaybackFailed = false;
     this.suggestions = []; // Clear suggestions to show error message if search fails
     this.wordAddedToVocabulary = false; // Reset flag for new word
     if (!fromVocabularyList) {
@@ -425,77 +435,34 @@ export class WordLookupComponent implements OnInit {
     });
   }
 
-  playAudio(audioUrl: string): void {
-    if (this.audioPlaybackFailed) {
-      return;
-    }
-
-    const normalizedAudioUrl = this.normalizeAudioUrl(audioUrl);
-    if (!normalizedAudioUrl) {
-      this.handleAudioPlaybackFailure();
+  speakWord(word?: string | null): void {
+    const text = word?.trim();
+    if (!text || !this.isSpeechSynthesisSupported) {
       return;
     }
 
     try {
-      if (this.pronunciationAudio) {
-        this.pronunciationAudio.pause();
-        this.pronunciationAudio.currentTime = 0;
-      }
-
-      this.pronunciationAudio = new Audio(normalizedAudioUrl);
-      this.pronunciationAudio.preload = 'auto';
-
-      this.pronunciationAudio.play().catch(error => {
-        console.error('Failed to play pronunciation audio:', error);
-        this.handleAudioPlaybackFailure();
-      });
-    } catch (error) {
-      console.error('Audio setup failed:', error);
-      this.handleAudioPlaybackFailure();
-    }
-  }
-
-  private handleAudioPlaybackFailure(): void {
-    this.audioPlaybackFailed = true;
-    this.toastService.error('Pronunciation audio is unavailable.');
-    this.playSpeechSynthesisFallback();
-  }
-
-  private normalizeAudioUrl(audioUrl?: string | null): string | null {
-    if (!audioUrl || !audioUrl.trim()) {
-      return null;
-    }
-
-    const trimmed = audioUrl.trim();
-
-    // Dictionary API data can contain protocol-relative or insecure HTTP audio links.
-    if (trimmed.startsWith('//')) {
-      return `https:${trimmed}`;
-    }
-
-    if (trimmed.startsWith('http://')) {
-      return `https://${trimmed.substring('http://'.length)}`;
-    }
-
-    return trimmed;
-  }
-
-  private playSpeechSynthesisFallback(): void {
-    const text = this.currentWord?.word?.trim();
-    const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
-
-    if (!text || !synth) {
-      return;
-    }
-
-    try {
+      const synth = window.speechSynthesis;
       synth.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
+      const utterance = new window.SpeechSynthesisUtterance(text);
       utterance.lang = 'en-US';
       utterance.rate = 0.95;
       synth.speak(utterance);
     } catch (error) {
-      console.error('Speech synthesis fallback failed:', error);
+      console.error('Speech synthesis failed:', error);
+      this.toastService.error('Pronunciation audio is unavailable.');
+    }
+  }
+
+  private cancelSpeech(): void {
+    if (!this.isSpeechSynthesisSupported) {
+      return;
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+    } catch (error) {
+      console.error('Failed to cancel speech synthesis:', error);
     }
   }
 

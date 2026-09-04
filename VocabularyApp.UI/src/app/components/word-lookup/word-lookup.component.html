@@ -119,10 +119,11 @@
           <div>
             <div class="flex items-center gap-3 mb-2">
               <h2 class="text-3xl sm:text-4xl font-bold text-gray-800">{{ currentWord.word }}</h2>
-              <button *ngIf="currentWord.audioUrl" (click)="playAudio(currentWord.audioUrl!)"
-                [disabled]="audioPlaybackFailed"
+              <button type="button" (click)="speakWord(currentWord.word)"
+                [disabled]="!isSpeechSynthesisSupported"
                 class="px-3 py-1 bg-blue-100 hover:bg-blue-200 disabled:opacity-50 disabled:cursor-not-allowed text-blue-700 rounded-full text-sm font-medium transition-colors duration-200 flex items-center gap-1"
-                [title]="audioPlaybackFailed ? 'Pronunciation audio unavailable' : 'Play pronunciation'">
+                [title]="isSpeechSynthesisSupported ? 'Play pronunciation' : 'Pronunciation is not supported by this browser'"
+                [attr.aria-label]="'Pronounce ' + currentWord.word">
                 🔊 Play
               </button>
               <button *ngIf="activeVocabularyWord" (click)="openDefinitionEditor(activeVocabularyWord, $event)"
