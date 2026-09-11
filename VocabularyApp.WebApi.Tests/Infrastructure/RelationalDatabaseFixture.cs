@@ -12,7 +12,7 @@ public sealed class RelationalDatabaseFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection = new SqliteConnection("Data Source=:memory:;Foreign Keys=True");
         await _connection.OpenAsync();
 
         _options = new DbContextOptionsBuilder<ApplicationDbContext>()

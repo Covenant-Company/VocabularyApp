@@ -48,7 +48,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
 
     public VocabularyAppWebApplicationFactory()
     {
-        _connection = new SqliteConnection("Data Source=:memory:");
+        _connection = new SqliteConnection("Data Source=:memory:;Foreign Keys=True");
         _connection.Open();
     }
 
@@ -108,11 +108,28 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
 
     protected override void Dispose(bool disposing)
     {
-        base.Dispose(disposing);
-
-        if (disposing)
+        try
         {
-            _connection.Dispose();
+            base.Dispose(disposing);
+        }
+        finally
+        {
+            if (disposing)
+            {
+                _connection.Dispose();
+            }
+        }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await base.DisposeAsync();
+        }
+        finally
+        {
+            await _connection.DisposeAsync();
         }
     }
 

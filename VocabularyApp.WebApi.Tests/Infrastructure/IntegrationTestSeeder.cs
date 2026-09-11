@@ -8,6 +8,8 @@ namespace VocabularyApp.WebApi.Tests.Infrastructure;
 
 public static class IntegrationTestSeeder
 {
+    public static readonly DateTime SeedTimestamp = new(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+
     public static async Task<User> SeedModernUserAsync(
         VocabularyAppWebApplicationFactory factory,
         TestUserCredentials credentials)
@@ -19,7 +21,7 @@ public static class IntegrationTestSeeder
         {
             Username = credentials.Username,
             Email = credentials.Email,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = SeedTimestamp
         };
         user.PasswordHash = passwordService.HashPassword(user, credentials.Password);
 
@@ -38,7 +40,7 @@ public static class IntegrationTestSeeder
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var partOfSpeech = await context.PartsOfSpeech
             .SingleAsync(candidate => candidate.Name == partOfSpeechName);
-        var word = new Word { Text = text };
+        var word = new Word { Text = text, CreatedAt = SeedTimestamp };
         context.Words.Add(word);
         await context.SaveChangesAsync();
 
@@ -47,7 +49,8 @@ public static class IntegrationTestSeeder
             WordId = word.Id,
             PartOfSpeechId = partOfSpeech.Id,
             Definition = definition,
-            DisplayOrder = 1
+            DisplayOrder = 1,
+            CreatedAt = SeedTimestamp
         };
         context.WordDefinitions.Add(wordDefinition);
         await context.SaveChangesAsync();
@@ -73,7 +76,8 @@ public static class IntegrationTestSeeder
             WordId = wordId,
             PartOfSpeechId = partOfSpeechId,
             Definition = definition,
-            DisplayOrder = displayOrder
+            DisplayOrder = displayOrder,
+            CreatedAt = SeedTimestamp
         };
         context.WordDefinitions.Add(wordDefinition);
         await context.SaveChangesAsync();
@@ -104,7 +108,7 @@ public static class IntegrationTestSeeder
             TotalAttempts = totalAttempts,
             LastReviewedAt = lastReviewedAt,
             LastCorrectAt = lastCorrectAt,
-            AddedAt = DateTime.UtcNow
+            AddedAt = SeedTimestamp
         };
         context.UserWords.Add(userWord);
         await context.SaveChangesAsync();
