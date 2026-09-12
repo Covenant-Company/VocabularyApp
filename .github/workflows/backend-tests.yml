@@ -1,4 +1,4 @@
-name: Phase 1 CI
+name: CI / Publish Artifact
 
 on:
   push:
@@ -53,7 +53,7 @@ jobs:
         run: npm test -- --watch=false --browsers=ChromeHeadless
 
   build:
-    name: .NET API / Angular Production Build
+    name: Build / Publish Artifact
     needs: [backend-tests, frontend-tests]
     runs-on: windows-2022
     timeout-minutes: 30
@@ -80,7 +80,7 @@ jobs:
       - name: Angular production build
         working-directory: VocabularyApp.UI
         run: npm run build -- --configuration production
-      # Validate the combined source staging layout only. No publish or upload.
+      # Stage browser assets before publishing so the Web SDK includes them.
       - name: Stage Angular browser contents in API wwwroot
         shell: pwsh
         run: |
@@ -99,3 +99,15 @@ jobs:
           if (Get-ChildItem -LiteralPath $staticRoot -Filter web.config -Recurse -Force) {
             throw 'Angular IIS configuration must not be staged in API wwwroot.'
           }
+      - name: Publish and validate application package
+        id: publish
+        shell: pwsh
+        run: ./scripts/ci/Publish-VocabularyApp.ps1
+      - name: Upload validated application package
+        uses: actions/upload-artifact@v7
+        with:
+          name: VocabularyApp-SmarterASP-Publish-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ steps.publish.outputs.publish-directory }}
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: false
