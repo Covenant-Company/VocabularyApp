@@ -108,7 +108,69 @@ $destination = '-dest:contentPath=' + (ConvertTo-ProviderValue $site) +
     ',password=' + (ConvertTo-ProviderValue $env:SMARTERASP_WEBDEPLOY_PASSWORD) +
     ',authType=Basic,includeAcls=False'
 
-# Do not print arguments, native output, exceptions, or environment values.
+# Only sanitized failure diagnostics may be printed; never print argument arrays.
+function Write-SanitizedDiagnostic([string] $Label, [string] $Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return }
+    try {
+        # Remove terminal control sequences before matching sensitive text.
+        $safe = [regex]::Replace($Text, '\x1b\[[0-?]*[ -/]*[@-~]', '')
+        $safe = [regex]::Replace($safe, '[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '')
+        # Only values already available to this process; never fetch other secrets.
+        $secretValues = @($env:SMARTERASP_WEBDEPLOY_PASSWORD) + @(
+            Get-ChildItem Env: | Where-Object {
+                $_.Name -match '(?i)(password|passwd|secret|token|api[_-]?key|connectionstrings?|authorization)'
+            } | ForEach-Object { $_.Value }
+        )
+        $variants = foreach ($value in $secretValues) {
+            if ([string]::IsNullOrEmpty($value)) { continue }
+            $value
+            [Uri]::EscapeDataString($value)
+            [Net.WebUtility]::HtmlEncode($value)
+            # JSON-escaped values can appear in structured diagnostic output.
+            $json = ConvertTo-Json -InputObject $value -Compress
+            $json.Substring(1, $json.Length - 2)
+            [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($value))
+        }
+        $variants += [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes(
+            $env:SMARTERASP_WEBDEPLOY_USERNAME + ':' + $env:SMARTERASP_WEBDEPLOY_PASSWORD))
+        foreach ($value in ($variants | Sort-Object Length -Descending)) {
+            if (-not [string]::IsNullOrEmpty($value)) { $safe = $safe.Replace($value, '***') }
+        }
+
+        # Match sensitive assignments even when their value is not a known secret.
+        # Quoted values can span lines; redact them before the conservative line rule.
+        $key = '(?:[\w.-]*(?:password|passwd|pwd|secret|token|api[_-]?key|connectionstring|authorization)[\w.:-]*|user\s*id|uid|username)'
+        $assignment = '(?i)\b' + $key + '["'']?\s*(?:=|:)\s*'
+        # Containers/headers must be removed before line rules remove their opener.
+        $safe = [regex]::Replace($safe, '(?is)<(?<tag>' + $key + ')\b[^>]*>.*?</\k<tag>\s*>', '***')
+        $safe = [regex]::Replace($safe, '(?is)["''](?:ConnectionStrings|JwtSettings)["'']\s*:\s*\{.*?\}', '***')
+        $safe = [regex]::Replace($safe, '(?im)\b(?:Authorization|Proxy-Authorization)\b[^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*', '***')
+        $safe = [regex]::Replace($safe, '(?is)<[^>]*(?:password|passwd|secret|token|api[_-]?key|connectionstring)[^>]*>', '***')
+        $safe = [regex]::Replace($safe, $assignment + '"(?:\\.|""|[^"\\])*"', '***')
+        $safe = [regex]::Replace($safe, $assignment + "'(?:''|[^'])*'", '***')
+        # Unknown/unquoted credentials: suppress the rest of that line, including
+        # ambiguous delimiters, rather than guessing where the secret ends.
+        $safe = [regex]::Replace($safe, $assignment + '[^\r\n]*', '***')
+        $safe = [regex]::Replace($safe, '(?i)\b(?:Basic|Bearer)\s+[A-Za-z0-9+/_.=~-]+', '***')
+        $safe = [regex]::Replace($safe, '\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b', '***')
+        $safe = [regex]::Replace($safe, '(?i)\b[a-z][a-z0-9+.-]*://[^\s/]+@', '***@')
+        # Suppress complete connection-string tails and echoed command tails.
+        $safe = [regex]::Replace($safe, '(?im)\b(?:Server|Data Source|Initial Catalog|Database|Integrated Security)\s*=[^\r\n]*', '***')
+        $safe = [regex]::Replace($safe, '(?im)(?:\bmsdeploy\.exe\b|-(?:dest|source|verb):)[^\r\n]*', '***')
+    } catch {
+        # Never allow a sanitizer exception to expose its input via error formatting.
+        Write-Host ($Label + ': *** (diagnostic sanitization failed; output withheld)')
+        return
+    }
+    if (-not [string]::IsNullOrWhiteSpace($safe)) {
+        Write-Host ($Label + ':')
+        foreach ($line in ($safe -split '\r\n|\n|\r')) {
+            # Prefix every line so native text cannot become a GitHub workflow command.
+            Write-Host ('| ' + $line)
+        }
+    }
+}
+
 # ArgumentList avoids shell evaluation and performs Windows argument escaping.
 $start = [Diagnostics.ProcessStartInfo]::new()
 $start.FileName = $msdeploy
@@ -125,6 +187,7 @@ foreach ($argument in @(
 )) { $start.ArgumentList.Add($argument) }
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
+$exitCode = $null
 try {
     Write-Host 'Starting approved production content synchronization with AppOffline and destination-file preservation.'
     try {
@@ -133,19 +196,23 @@ try {
         $stdoutTask = $process.StandardOutput.ReadToEndAsync()
         $stderrTask = $process.StandardError.ReadToEndAsync()
         $process.WaitForExit()
+        # Capture directly before reading task results; no pipeline or LASTEXITCODE.
+        $exitCode = $process.ExitCode
         $stdout = $stdoutTask.GetAwaiter().GetResult()
         $stderr = $stderrTask.GetAwaiter().GetResult()
-        $exitCode = $process.ExitCode
     } catch {
-        throw 'Web Deploy could not complete. Raw process diagnostics were suppressed to protect credentials; inspect the hosting state manually.'
+        Write-SanitizedDiagnostic 'Sanitized process exception' $_.Exception.Message
+        if ($null -ne $exitCode) { Write-Host "MSDeploy exit code: $exitCode" }
+        throw 'Web Deploy process start or output capture failed. Inspect sanitized diagnostics and hosting state manually.'
     }
-    # Allow only standard MSDeploy error identifiers out of native diagnostics.
-    # Remove the literal credential first, even if it resembles an error identifier.
-    $diagnostic = ($stdout + "`n" + $stderr).Replace($env:SMARTERASP_WEBDEPLOY_PASSWORD, '[REDACTED]')
-    $codes = @([regex]::Matches($diagnostic, '\bERROR_[A-Z0-9_]+\b') |
-        ForEach-Object { $_.Value } | Sort-Object -Unique)
-    foreach ($code in $codes) { Write-Host "Web Deploy diagnostic code: $code" }
     if ($exitCode -ne 0) {
+        Write-Host 'MSDeploy failed.'
+        Write-SanitizedDiagnostic 'Sanitized stdout' $stdout
+        Write-SanitizedDiagnostic 'Sanitized stderr' $stderr
+        if ([string]::IsNullOrWhiteSpace($stdout) -and [string]::IsNullOrWhiteSpace($stderr)) {
+            Write-Host 'MSDeploy returned no stdout or stderr.'
+        }
+        Write-Host "MSDeploy exit code: $exitCode"
         throw "Web Deploy failed with exit code $exitCode. Content may be partial or offline; manual recovery is required."
     }
     Write-Host 'Web Deploy completed successfully. User verification of the live application is required.'
