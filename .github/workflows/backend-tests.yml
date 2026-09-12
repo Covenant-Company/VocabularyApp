@@ -57,6 +57,8 @@ jobs:
     needs: [backend-tests, frontend-tests]
     runs-on: windows-2022
     timeout-minutes: 30
+    outputs:
+      artifact-id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -104,6 +106,7 @@ jobs:
         shell: pwsh
         run: ./scripts/ci/Publish-VocabularyApp.ps1
       - name: Upload validated application package
+        id: upload
         uses: actions/upload-artifact@v7
         with:
           name: VocabularyApp-SmarterASP-Publish-${{ github.sha }}-${{ github.run_attempt }}
@@ -111,3 +114,50 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           include-hidden-files: false
+
+  deploy-production:
+    name: Deploy to SmarterASP.NET
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: windows-2022
+    timeout-minutes: 20
+    environment:
+      name: production
+    concurrency:
+      group: vocabularyapp-production
+      cancel-in-progress: false
+    steps:
+      - name: Check out deployment script from the tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          sparse-checkout: scripts/ci
+      - name: Prepare clean artifact staging directory
+        id: staging
+        shell: pwsh
+        env:
+          PUBLISH_ARTIFACT_ID: ${{ needs.build.outputs.artifact-id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PUBLISH_ARTIFACT_ID -notmatch '^[1-9][0-9]*$') {
+            throw 'The successful build did not supply a valid artifact ID.'
+          }
+          $directory = Join-Path $env:RUNNER_TEMP ('VocabularyApp-deploy-' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $directory | Out-Null
+          "directory=$directory" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Download the validated artifact from this workflow run
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: ${{ steps.staging.outputs.directory }}
+          digest-mismatch: error
+      - name: Validate package and deploy with Microsoft Web Deploy
+        shell: pwsh
+        env:
+          DEPLOY_DIRECTORY: ${{ steps.staging.outputs.directory }}
+          SMARTERASP_WEBDEPLOY_URL: ${{ vars.SMARTERASP_WEBDEPLOY_URL }}
+          SMARTERASP_WEBDEPLOY_USERNAME: ${{ vars.SMARTERASP_WEBDEPLOY_USERNAME }}
+          SMARTERASP_SITE_NAME: ${{ vars.SMARTERASP_SITE_NAME }}
+          SMARTERASP_WEBDEPLOY_PASSWORD: ${{ secrets.SMARTERASP_WEBDEPLOY_PASSWORD }}
+        run: ./scripts/ci/Deploy-SmarterAsp.ps1
