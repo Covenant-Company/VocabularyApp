@@ -1,16 +1,17 @@
-name: Backend tests
+name: Phase 1 CI
 
 on:
   push:
-  pull_request:
+    branches:
+      - master
 
 permissions:
   contents: read
 
 jobs:
-  test:
-    name: Restore, build, and test
-    runs-on: windows-latest
+  backend-tests:
+    name: Backend / Integration Tests
+    runs-on: windows-2022
     timeout-minutes: 20
 
     steps:
@@ -25,8 +26,76 @@ jobs:
       - name: Restore solution
         run: dotnet restore VocabularyApp.sln
 
-      - name: Build solution
-        run: dotnet build VocabularyApp.sln --configuration Release --no-restore
+      # No filter: this project includes unit, service, and integration tests.
+      # The existing fixtures replace SQL Server with private in-memory SQLite.
+      - name: Run backend and integration tests
+        run: dotnet test VocabularyApp.WebApi.Tests/VocabularyApp.WebApi.Tests.csproj --configuration Release --no-restore
 
-      - name: Run automated tests
-        run: dotnet test VocabularyApp.sln --configuration Release --no-build
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: windows-2022
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: VocabularyApp.UI
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: VocabularyApp.UI/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+      - name: Run frontend tests with headless Chrome
+        run: npm test -- --watch=false --browsers=ChromeHeadless
+
+  build:
+    name: .NET API / Angular Production Build
+    needs: [backend-tests, frontend-tests]
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: VocabularyApp.UI/package-lock.json
+      - name: Restore solution
+        run: dotnet restore VocabularyApp.sln
+      - name: .NET API Release build
+        run: dotnet build VocabularyApp.sln --configuration Release --no-restore
+      - name: Install frontend dependencies
+        working-directory: VocabularyApp.UI
+        run: npm ci
+      - name: Angular production build
+        working-directory: VocabularyApp.UI
+        run: npm run build -- --configuration production
+      # Validate the combined source staging layout only. No publish or upload.
+      - name: Stage Angular browser contents in API wwwroot
+        shell: pwsh
+        run: |
+          $browserOutput = Join-Path $env:GITHUB_WORKSPACE 'VocabularyApp.UI/dist/vocabulary-app.ui/browser'
+          $staticRoot = Join-Path $env:GITHUB_WORKSPACE 'VocabularyApp.WebApi/wwwroot'
+          if (-not (Test-Path -LiteralPath (Join-Path $browserOutput 'index.html') -PathType Leaf)) {
+            throw 'Angular browser output is missing index.html.'
+          }
+          New-Item -ItemType Directory -Path $staticRoot -Force | Out-Null
+          Get-ChildItem -LiteralPath $browserOutput -Force |
+            Where-Object { $_.Name -ne 'web.config' } |
+            Copy-Item -Destination $staticRoot -Recurse -Force
+          if (-not (Test-Path -LiteralPath (Join-Path $staticRoot 'index.html') -PathType Leaf)) {
+            throw 'API wwwroot is missing the staged Angular index.html.'
+          }
+          if (Get-ChildItem -LiteralPath $staticRoot -Filter web.config -Recurse -Force) {
+            throw 'Angular IIS configuration must not be staged in API wwwroot.'
+          }
