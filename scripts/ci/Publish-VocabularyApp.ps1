@@ -29,10 +29,11 @@ function Assert-ReviewedSettings([string] $Path) {
 }
 Assert-ReviewedSettings (Join-Path $workspace 'VocabularyApp.WebApi/appsettings.json')
 
-dotnet restore $project --runtime win-x64 -p:SelfContained=false
+# Override project RIDs for this artifact only; use the installed dotnet host.
+dotnet restore $project -p:RuntimeIdentifier= -p:UseAppHost=false -p:SelfContained=false
 if ($LASTEXITCODE -ne 0) { throw 'WebApi publish restore failed.' }
 # Rebuild after Angular staging; do not use --no-build with earlier static assets.
-dotnet publish $project --configuration Release --runtime win-x64 --self-contained false --no-restore --output $publishDirectory -p:DebugType=None -p:DebugSymbols=false
+dotnet publish $project --configuration Release -p:RuntimeIdentifier= -p:UseAppHost=false --self-contained false --no-restore --output $publishDirectory -p:DebugType=None -p:DebugSymbols=false
 if ($LASTEXITCODE -ne 0) { throw 'WebApi publish failed.' }
 
 $developmentSettings = Join-Path $publishDirectory 'appsettings.Development.json'
@@ -41,7 +42,7 @@ if (Test-Path -LiteralPath $developmentSettings -PathType Leaf) {
 }
 
 foreach ($relativePath in @(
-    'VocabularyApp.WebApi.dll', 'VocabularyApp.WebApi.exe', 'VocabularyApp.Data.dll',
+    'VocabularyApp.WebApi.dll', 'VocabularyApp.Data.dll',
     'VocabularyApp.WebApi.deps.json', 'VocabularyApp.WebApi.runtimeconfig.json',
     'appsettings.json', 'web.config', 'wwwroot/index.html'
 )) {
@@ -49,6 +50,9 @@ foreach ($relativePath in @(
     if ($file.PSIsContainer -or $file.Length -eq 0) { throw "Missing or empty required output: $relativePath" }
 }
 Assert-ReviewedSettings (Join-Path $publishDirectory 'appsettings.json')
+if (Test-Path -LiteralPath (Join-Path $publishDirectory 'VocabularyApp.WebApi.exe')) {
+    throw 'Portable publish must not contain the WebApi apphost.'
+}
 $publishedStaticRoot = Join-Path $publishDirectory 'wwwroot'
 foreach ($pattern in @('*.js', '*.css')) {
     if (-not (Get-ChildItem -LiteralPath $publishedStaticRoot -Filter $pattern -File)) {
@@ -99,8 +103,7 @@ if (-not $hosting -or -not $handler -or $hosting.GetAttribute('hostingModel') -n
     throw 'Missing expected ASP.NET Core IIS hosting configuration.'
 }
 $process = $hosting.GetAttribute('processPath')
-if (-not (($process -eq '.\VocabularyApp.WebApi.exe') -or
-    ($process -eq 'dotnet' -and $hosting.GetAttribute('arguments') -eq '.\VocabularyApp.WebApi.dll'))) {
+if ($process -ne 'dotnet' -or $hosting.GetAttribute('arguments') -ne '.\VocabularyApp.WebApi.dll') {
     throw 'IIS configuration does not launch the expected WebApi application.'
 }
 if ($iis.SelectNodes('//environmentVariable').Count -ne 0 -or $iis.SelectNodes('//connectionStrings').Count -ne 0) {
@@ -109,6 +112,15 @@ if ($iis.SelectNodes('//environmentVariable').Count -ne 0 -or $iis.SelectNodes('
 $runtime = Get-Content -LiteralPath (Join-Path $publishDirectory 'VocabularyApp.WebApi.runtimeconfig.json') -Raw | ConvertFrom-Json
 if (-not ($runtime.runtimeOptions.frameworks | Where-Object { $_.name -eq 'Microsoft.AspNetCore.App' -and $_.version -like '8.*' })) {
     throw 'Expected framework-dependent ASP.NET Core 8 runtime configuration.'
+}
+if ($runtime.runtimeOptions.tfm -ne 'net8.0' -or
+    -not ($runtime.runtimeOptions.frameworks | Where-Object { $_.name -eq 'Microsoft.NETCore.App' -and $_.version -like '8.*' }) -or
+    $runtime.runtimeOptions.PSObject.Properties['includedFrameworks']) {
+    throw 'Expected shared .NET 8 frameworks, not a bundled runtime.'
+}
+$deps = Get-Content -LiteralPath (Join-Path $publishDirectory 'VocabularyApp.WebApi.deps.json') -Raw | ConvertFrom-Json
+if ($deps.runtimeTarget.name -ne '.NETCoreApp,Version=v8.0') {
+    throw 'Expected a portable .NET 8 dependency target without a runtime identifier.'
 }
 # Expose the path only after all validations pass. Upload is the next gated step.
 "publish-directory=$publishDirectory" | Out-File -LiteralPath $env:GITHUB_OUTPUT -Append -Encoding utf8
