@@ -22,12 +22,15 @@ if ((Get-Item -LiteralPath $directory).Attributes -band [IO.FileAttributes]::Rep
 }
 
 foreach ($relativePath in @(
-    'VocabularyApp.WebApi.dll', 'VocabularyApp.WebApi.exe', 'VocabularyApp.Data.dll',
+    'VocabularyApp.WebApi.dll', 'VocabularyApp.Data.dll',
     'VocabularyApp.WebApi.deps.json', 'VocabularyApp.WebApi.runtimeconfig.json',
     'appsettings.json', 'web.config', 'wwwroot/index.html'
 )) {
     $file = Get-Item -LiteralPath (Join-Path $directory $relativePath)
     if ($file.PSIsContainer -or $file.Length -eq 0) { throw "Missing or empty application output: $relativePath" }
+}
+if (Test-Path -LiteralPath (Join-Path $directory 'VocabularyApp.WebApi.exe')) {
+    throw 'Portable artifact must not contain the WebApi apphost.'
 }
 foreach ($pattern in @('*.js', '*.css')) {
     $assets = @(Get-ChildItem -LiteralPath (Join-Path $directory 'wwwroot') -Filter $pattern -File |
