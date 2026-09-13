@@ -183,7 +183,7 @@ foreach ($argument in @(
     '-verb:sync', $source, $destination,
     '-enableRule:DoNotDeleteRule', '-enableRule:AppOffline',
     '-disableLink:AppPoolExtension', '-disableLink:ContentExtension',
-    '-disableLink:CertificateExtension', '-retryAttempts:0'
+    '-disableLink:CertificateExtension'
 )) { $start.ArgumentList.Add($argument) }
 $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
