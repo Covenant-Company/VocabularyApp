@@ -23,7 +23,7 @@ function Assert-ReviewedSettings([string] $Path) {
     } finally {
         $sha.Dispose()
     }
-    if ($digest -ne '4D7BBE487806840C228B920060B93757547389D811A03FDA9CB3082E1D3E9965') {
+    if ($digest -ne '66D9AD9C03B1D5507675DA1CAB0E8932E04315EF89C25D5C3222B863F42D5B54') {
         throw 'appsettings.json differs from reviewed non-secret defaults; review before packaging.'
     }
 }
@@ -95,6 +95,9 @@ foreach ($entry in Get-ChildItem -LiteralPath $publishDirectory -Recurse -Force)
         throw 'Nested web.config is forbidden, including under wwwroot.'
     }
 }
+
+. (Join-Path $PSScriptRoot 'Assert-Psh1WebConfig.ps1')
+Assert-Psh1WebConfig -Path (Join-Path $publishDirectory 'web.config')
 
 [xml] $iis = Get-Content -LiteralPath (Join-Path $publishDirectory 'web.config') -Raw
 $hosting = $iis.SelectSingleNode('/configuration/location/system.webServer/aspNetCore')

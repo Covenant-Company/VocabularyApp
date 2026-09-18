@@ -13,13 +13,6 @@ using VocabularyApp.WebApi.Services;
 AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
 var builder = WebApplication.CreateBuilder(args);
 
-var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-    ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
-    .Select(origin => origin.TrimEnd('/'))
-    .Distinct(StringComparer.OrdinalIgnoreCase)
-    .ToArray()
-    ?? new[] { "http://localhost:4200", "https://localhost:4200" };
-
 // Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -40,15 +33,27 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
-builder.Services.AddCors(options =>
+// Production UI and API are same-origin; only local development needs CORS.
+if (builder.Environment.IsDevelopment())
 {
-    options.AddPolicy("AllowAngular", policy =>
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+        ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(origin => origin.TrimEnd('/'))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+    if (allowedOrigins is not { Length: > 0 })
+        throw new InvalidOperationException("Development requires Cors:AllowedOrigins configuration.");
+
+    builder.Services.AddCors(options =>
     {
-        policy.WithOrigins(allowedOrigins)
-              .AllowAnyHeader()
-              .AllowAnyMethod();
+        options.AddPolicy("AllowAngular", policy =>
+        {
+            policy.WithOrigins(allowedOrigins)
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
     });
-});
+}
 
 builder.Services.AddScoped<IQuizService, QuizService>();
 builder.Services.AddScoped<IUserService, UserService>();
@@ -121,12 +126,13 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-// app.UseHttpsRedirection();
+// The published root web.config is the single IIS HTTP enforcement authority.
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
 
-app.UseCors("AllowAngular");
+if (app.Environment.IsDevelopment())
+    app.UseCors("AllowAngular");
 
 app.UseAuthentication();
 app.UseAuthorization();
