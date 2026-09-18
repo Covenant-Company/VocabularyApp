@@ -18,6 +18,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
 {
     private static readonly JwtSettings TestJwtSettings = TestJwtSettingsFactory.Create();
     private readonly SqliteConnection _connection;
+    private readonly string _environmentName;
 
     public ControllableDictionaryHandler DictionaryHandler { get; } = new();
     public QuizPersistenceFailureInterceptor QuizPersistenceFailure { get; } = new();
@@ -46,15 +47,19 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
             TestJwtSettings.ExpirationMinutes.ToString(CultureInfo.InvariantCulture));
     }
 
-    public VocabularyAppWebApplicationFactory()
+    public VocabularyAppWebApplicationFactory(string environmentName = "Testing")
     {
+        _environmentName = environmentName;
         _connection = new SqliteConnection("Data Source=:memory:;Foreign Keys=True");
         _connection.Open();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        builder.UseEnvironment("Testing");
+        builder.UseEnvironment(_environmentName);
+        // These API tests do not require a staged Angular build or a stale local asset manifest.
+        builder.UseSetting(WebHostDefaults.StaticWebAssetsKey,
+            Path.Combine(AppContext.BaseDirectory, "psh1-no-static-assets-manifest.json"));
         builder.ConfigureLogging(logging => logging.ClearProviders());
 
         builder.ConfigureAppConfiguration((_, configuration) =>
@@ -70,8 +75,7 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
                     TestJwtSettings.ExpirationMinutes.ToString(CultureInfo.InvariantCulture),
                 ["WordsApi:BaseUrl"] = "https://wordsapiv1.p.rapidapi.com/",
                 ["WordsApi:Host"] = "wordsapiv1.p.rapidapi.com",
-                ["WordsApi:ApiKey"] = "integration-test-words-api-key",
-                ["Cors:AllowedOrigins:0"] = "https://integration-tests.example"
+                ["WordsApi:ApiKey"] = "integration-test-words-api-key"
             });
         });
 

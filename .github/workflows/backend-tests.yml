@@ -101,10 +101,18 @@ jobs:
           if (Get-ChildItem -LiteralPath $staticRoot -Filter web.config -Recurse -Force) {
             throw 'Angular IIS configuration must not be staged in API wwwroot.'
           }
+      - name: Test Release A artifact and acceptance checks offline
+        shell: pwsh
+        run: ./scripts/ci/tests/Test-Psh1Scripts.ps1
       - name: Publish and validate application package
         id: publish
         shell: pwsh
         run: ./scripts/ci/Publish-VocabularyApp.ps1
+      - name: Verify actual published HTTPS policy and mutation rejection
+        shell: pwsh
+        env:
+          PSH1_PUBLISH_DIRECTORY: ${{ steps.publish.outputs.publish-directory }}
+        run: ./scripts/ci/tests/Test-Psh1Scripts.ps1 -PublishedWebConfig (Join-Path $env:PSH1_PUBLISH_DIRECTORY 'web.config')
       - name: Upload validated application package
         id: upload
         uses: actions/upload-artifact@v7
@@ -161,3 +169,7 @@ jobs:
           SMARTERASP_SITE_NAME: ${{ vars.SMARTERASP_SITE_NAME }}
           SMARTERASP_WEBDEPLOY_PASSWORD: ${{ secrets.SMARTERASP_WEBDEPLOY_PASSWORD }}
         run: ./scripts/ci/Deploy-SmarterAsp.ps1
+      - name: Accept Release A production HTTPS transport (HSTS deferred)
+        shell: pwsh
+        timeout-minutes: 5
+        run: ./scripts/ci/Test-ProductionHttps.ps1

@@ -123,7 +123,7 @@ Requirements:
 
 ### CORS Settings
 
-The backend reads CORS origins from:
+Only in the **Development** environment, the backend reads CORS origins from:
 
 ```json
 "Cors": {
@@ -133,8 +133,9 @@ The backend reads CORS origins from:
 
 Important detail:
 
-- If the Angular frontend and API are deployed under the same domain and site, CORS may not be needed for browser calls because the frontend uses a relative `/api` URL.
-- If you serve the frontend from a different domain, subdomain, or separate site, you must add that exact origin to `Cors:AllowedOrigins`.
+- Development retains `http://localhost:4200` and `https://localhost:4200` for local Angular development.
+- Production Angular and API are same-origin and use relative `/api` URLs; Production grants no development-origin CORS access.
+- Adding production `Cors:AllowedOrigins` values does not enable cross-origin access. A future production cross-origin client requires separate design/security review and explicit implementation.
 
 ### Angular API Base URL
 
@@ -203,8 +204,10 @@ Before publishing the backend, copy the Angular browser files into the backend `
 Example PowerShell commands:
 
 ```powershell
-Remove-Item .\VocabularyApp.WebApi\wwwroot\* -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item .\VocabularyApp.UI\dist\vocabulary-app.ui\browser\* .\VocabularyApp.WebApi\wwwroot\ -Recurse -Force
+New-Item -ItemType Directory -Force -Path .\VocabularyApp.WebApi\wwwroot | Out-Null
+Get-ChildItem .\VocabularyApp.UI\dist\vocabulary-app.ui\browser -Force |
+  Where-Object Name -NE 'web.config' |
+  Copy-Item -Destination .\VocabularyApp.WebApi\wwwroot -Recurse -Force
 ```
 
 If the `wwwroot` folder does not exist, create it first:
@@ -225,7 +228,7 @@ Set-Location ..
 
 ```powershell
 Set-Location .\VocabularyApp.WebApi
-dotnet publish -c Release -o .\publish
+dotnet publish -c Release -p:RuntimeIdentifier= -p:UseAppHost=false --self-contained false -o .\publish
 Set-Location ..
 ```
 
@@ -245,10 +248,11 @@ npm install
 npm run build
 Set-Location ..
 New-Item -ItemType Directory -Force -Path .\VocabularyApp.WebApi\wwwroot | Out-Null
-Remove-Item .\VocabularyApp.WebApi\wwwroot\* -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item .\VocabularyApp.UI\dist\vocabulary-app.ui\browser\* .\VocabularyApp.WebApi\wwwroot\ -Recurse -Force
+Get-ChildItem .\VocabularyApp.UI\dist\vocabulary-app.ui\browser -Force |
+  Where-Object Name -NE 'web.config' |
+  Copy-Item -Destination .\VocabularyApp.WebApi\wwwroot -Recurse -Force
 Set-Location .\VocabularyApp.WebApi
-dotnet publish -c Release -o .\publish
+dotnet publish -c Release -p:RuntimeIdentifier= -p:UseAppHost=false --self-contained false -o .\publish
 Set-Location ..
 ```
 
@@ -276,7 +280,7 @@ Observed contents include:
 
 Expected contents include:
 
-- `VocabularyApp.WebApi.exe`
+- No application `.exe`: this is a portable framework-dependent artifact using `dotnet`
 - `VocabularyApp.WebApi.dll`
 - `VocabularyApp.WebApi.runtimeconfig.json`
 - `web.config`
@@ -325,7 +329,7 @@ This is the best match for the repository because:
 4. In SmarterASP.NET, open the site root for the ASP.NET Core app.
 5. Upload everything from `VocabularyApp.WebApi/publish` into that site root.
 6. Confirm that the uploaded root contains both:
-   - `VocabularyApp.WebApi.exe` and related backend files
+   - `VocabularyApp.WebApi.dll` and related backend files
    - a `wwwroot` folder with Angular assets including `index.html`
 
 ### Where To Upload the Backend/API Files
@@ -334,7 +338,7 @@ Upload to the IIS application root for the site or virtual application that Smar
 
 Typical expectation:
 
-- Site root contains `web.config`, the `.exe`, `.dll`, `appsettings*.json`, and `wwwroot`
+- Site root contains root `web.config`, application/dependency DLLs, reviewed `appsettings.json`, and `wwwroot`. Do not upload Development settings or an application apphost executable.
 
 ### Where To Upload the Frontend Files
 
@@ -348,17 +352,28 @@ Instead:
 
 ### How To Handle `web.config`
 
-There are two different `web.config` files in this repository:
+The configuration lifecycle distinguishes these files:
 
 - `VocabularyApp.UI/public/web.config`: Angular rewrite rules for static IIS hosting
-- `VocabularyApp.WebApi/publish/web.config`: ASP.NET Core hosting configuration for IIS
+- `VocabularyApp.WebApi/web.config`: source-owned ASP.NET Core hosting and PSH-1 transport rules
+- `VocabularyApp.WebApi/publish/web.config`: actual Web SDK publish output; validate this file, not only the source
 
 For this deployment model:
 
 - The root `web.config` that matters is the ASP.NET Core backend `web.config` from the publish output.
-- The Angular `web.config` may be copied into `wwwroot` as a static file, but IIS will use the site root `web.config` for the application.
+- Exclude Angular `web.config` from staging. Publish/deploy validation rejects nested configuration files, including under `wwwroot`.
 
 Do not replace the root ASP.NET Core `web.config` with the Angular-only `web.config`.
+
+PSH-1 Release A is implemented but not deployed by this change. The root IIS rules are the sole transport authority: HTTP API requests and non-GET/HEAD methods receive 403; other HTTP navigation receives 301 to `https://myvocabularybuilder.org` with the original path/query. HTTPS passes through. Keep SmarterASP.NET **1-Click Force HTTPS disabled**; do not add application redirects or forwarded-header trust. HSTS is not enabled in Release A.
+
+Use the validated CI artifact for deployment. `Publish-VocabularyApp.ps1` checks the actual published XML; `Deploy-SmarterAsp.ps1` repeats the check before MSDeploy. `DoNotDeleteRule` does not preserve destination edits inside root `web.config`: deploy the source-owned complete file. Existing ignored local publish/archive directories can contaminate a local Web SDK publish; use a clean checkout and never weaken artifact checks to accept them.
+
+Before release approval, confirm certificate renewal/challenge requirements, IIS Rewrite delegation, Production environment, effective inherited rules, and access to a securely retained prior root configuration/artifact. After successful MSDeploy, CI runs `scripts/ci/Test-ProductionHttps.ps1` without credentials. It requires fresh HTTPS HTML/assets, exact 301 target/path/query, bounded redirects, HTTP 403 rejection, HTTPS profile 401 Bearer challenge and no production development-origin CORS grant. It does not call WordsAPI or require HSTS. A 401 is transport/authentication-boundary evidence, not authenticated functional success.
+
+If acceptance fails after synchronization, the job fails; there is no automatic rollback. Restore the known-good root configuration for an isolated IIS fault or use a reviewed recovery artifact. Restoring pre-PSH configuration can reopen insecure HTTP: keep credential entry unavailable until enforcement is restored and retested. Preserve certificates and HTTPS. CORS recovery must not remove IIS enforcement. Record any manual recovery and repeat the automated checks plus an authorized HTTPS login/lookup/vocabulary/quiz smoke test. Do not record tokens or credentials.
+
+Release B remains blocked until reviewed Release A is approved, deployed and passes automatic transport and manual authenticated checks. See the [implementation and verification record](../Updates/PSH-1-https-ssl-production-hardening-implementation-plan.md#17-release-a-implementation-record).
 
 ### Application Path / Site Folder
 
@@ -402,7 +417,7 @@ Required:
 The published root `web.config` currently points to:
 
 ```xml
-<aspNetCore processPath=".\VocabularyApp.WebApi.exe" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="inprocess" />
+<aspNetCore processPath="dotnet" arguments=".\VocabularyApp.WebApi.dll" stdoutLogEnabled="false" stdoutLogFile=".\logs\stdout" hostingModel="inprocess" />
 ```
 
 ## 7. Database Steps
@@ -564,8 +579,8 @@ Symptoms:
 
 Fix:
 
-- If frontend and backend are on different origins, add the frontend origin to `Cors:AllowedOrigins`.
-- If deployed as one site, verify requests are actually going to the same origin using `/api`.
+- For local Development, verify the Angular origin matches the configured localhost allowlist.
+- In Production, verify requests use the same origin through `/api`. Adding `Cors:AllowedOrigins` does not activate production CORS; a new production cross-origin client requires separate design/security review and explicit implementation.
 
 ### Database Connection Failures
 
@@ -646,18 +661,14 @@ Check these items in the SmarterASP.NET control panel:
 
 ## Recommended Manual Deployment Workflow
 
-Use this as the shortest reliable deployment checklist:
+Use the current validated artifact procedure for Release A; do not manually reconstruct or edit a production package to bypass its safeguards:
 
-1. Clone the repo.
-2. Run `dotnet restore .\VocabularyApp.sln`.
-3. Run `npm install` in `VocabularyApp.UI`.
-4. Run `npm run build` in `VocabularyApp.UI`.
-5. Copy `VocabularyApp.UI/dist/vocabulary-app.ui/browser/*` into `VocabularyApp.WebApi/wwwroot/`.
-6. Update backend production configuration with the real SQL Server connection string and real JWT secret.
-7. Apply EF Core migrations to the production database.
-8. Run `dotnet publish -c Release -o .\publish` in `VocabularyApp.WebApi`.
-9. Upload everything from `VocabularyApp.WebApi/publish` to the SmarterASP.NET site root.
-10. Verify the site root loads, `/swagger` loads, and register/login works.
+1. Complete review and the normal authorized Git workflow. The master-push workflow in `.github/workflows/backend-tests.yml` requires backend/frontend tests before building and publishing.
+2. Use its Angular production build and staging step, which excludes Angular's `web.config`. Never deploy a nested Angular configuration or overwrite the source-controlled ASP.NET Core/IIS root configuration with it.
+3. Require `scripts/ci/Publish-VocabularyApp.ps1` to succeed in its workflow environment. It publishes a portable framework-dependent artifact with an empty runtime identifier, `UseAppHost=false` and `SelfContained=false`, removes Development settings, and validates package contents and the actual published XML through `Assert-Psh1WebConfig.ps1`. Preserve `processPath="dotnet"` and `arguments=".\VocabularyApp.WebApi.dll"`; do not substitute an apphost executable. The workflow also requires the published-XML mutation check before upload.
+4. Use the validated artifact from that successful workflow run. Confirm the documented IIS, certificate-renewal, Production-environment, recovery and approval prerequisites before authorizing deployment. Keep runtime secrets external and SmarterASP.NET 1-Click Force HTTPS disabled.
+5. After production approval, the existing deployment job downloads the exact artifact by ID with digest enforcement. `scripts/ci/Deploy-SmarterAsp.ps1` revalidates it, including the root PSH-1 configuration, before MSDeploy. Do not replace this path with an unchecked local publish/upload.
+6. Require post-MSDeploy transport acceptance and manual authenticated HTTPS Angular/API smoke. Record acceptance or follow the documented manual recovery procedure on failure. Release A requires no database migration and does not enable HSTS; Release B remains gated on accepted Release A.
 
 ## Files Inspected For This Guide
 

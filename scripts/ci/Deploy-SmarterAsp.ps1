@@ -60,6 +60,8 @@ foreach ($entry in Get-ChildItem -LiteralPath $directory -Recurse -Force) {
         throw 'Nested web.config is forbidden.'
     }
 }
+. (Join-Path $PSScriptRoot 'Assert-Psh1WebConfig.ps1')
+Assert-Psh1WebConfig -Path (Join-Path $directory 'web.config')
 Write-Host 'Downloaded application artifact passed pre-deployment validation.'
 
 # The windows-2022 image includes the Visual Studio WebDeploy component.
