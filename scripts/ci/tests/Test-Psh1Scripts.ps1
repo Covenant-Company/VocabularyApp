@@ -96,18 +96,18 @@ $send = {
     }
     if ($Url.Contains('/api/')) {
         if ($mode -eq 'ApiHtml200') { return New-Response 200 @{ 'Content-Type' = 'text/html' } '<app-root></app-root>' }
-        $resultHeaders = @{ 'WWW-Authenticate' = 'Bearer' }
+        $resultHeaders = @{ 'WWW-Authenticate' = 'Bearer'; 'Strict-Transport-Security' = 'max-age=300' }
         if ($mode -eq 'Cors') { $resultHeaders['Access-Control-Allow-Origin'] = 'http://localhost:4200' }
         return New-Response 401 $resultHeaders
     }
-    if ($Url.EndsWith('.js')) { return New-Response 200 @{ 'Content-Type' = 'text/javascript' } 'const app = true;' }
+    if ($Url.EndsWith('.js')) { return New-Response 200 @{ 'Content-Type' = 'text/javascript'; 'Strict-Transport-Security' = 'max-age=300' } 'const app = true;' }
     if ($mode -eq 'Cached') { return New-Response 304 }
     $body = '<html><app-root></app-root><script src="main-fixture.js"></script></html>'
     if ($mode -eq 'ForeignAsset') { $body = '<app-root></app-root><script src="https://wrong.example/a.js"></script>' }
-    return New-Response 200 @{ 'Content-Type' = 'text/html; charset=utf-8' } $body
+    return New-Response 200 @{ 'Content-Type' = 'text/html; charset=utf-8'; 'Strict-Transport-Security' = 'max-age=300' } $body
 }
 $delay = { param($Seconds) Check ($Seconds -eq 5) 'readiness delay'; $script:state.Sleeps++ }
-Invoke-Psh1ReleaseAAcceptance -Send $send -Delay $delay
+Invoke-Psh1ReleaseBAcceptance -Send $send -Delay $delay
 Check ($script:state.Requests -lt 30) 'success request bound'
 foreach ($case in @(
     @('Tls', 'PSH1_TLS'), @('Network', 'PSH1_READINESS_TIMEOUT'), @('TooLarge', 'PSH1_RESPONSE_SIZE'),
@@ -118,14 +118,14 @@ foreach ($case in @(
     @('Cached', 'PSH1_PAGE_CONTRACT'), @('ForeignAsset', 'PSH1_ASSET_REFERENCE')
 )) {
     $script:state = @{ Mode = $case[0]; Requests = 0; Sleeps = 0 }
-    Expect-Rejection { Invoke-Psh1ReleaseAAcceptance $send $delay } $case[0] $case[1]
+    Expect-Rejection { Invoke-Psh1ReleaseBAcceptance $send $delay } $case[0] $case[1]
     if ($case[0] -in @('Network', 'Unavailable')) {
         Check ($script:state.Requests -eq 6 -and $script:state.Sleeps -eq 5) 'retry bound'
     }
     if ($case[0] -eq 'Tls') { Check ($script:state.Requests -eq 1) 'TLS fails without retries' }
 }
 $script:state = @{ Mode = 'Startup'; Requests = 0; Sleeps = 0 }
-Invoke-Psh1ReleaseAAcceptance $send $delay
+Invoke-Psh1ReleaseBAcceptance $send $delay
 Check ($script:state.Sleeps -eq 2) 'startup recovers after bounded retry'
 
 $loop = { param($Method, $Url, $Headers) New-Response 301 @{ Location = 'https://myvocabularybuilder.org/login' } }
@@ -143,4 +143,52 @@ foreach ($bad in @('http://myvocabularybuilder.org/login', 'https://wrong.exampl
     'https://myvocabularybuilder.org/login#fragment')) {
     Expect-Rejection { Assert-Psh1CanonicalUri $bad } 'unsafe redirect target'
 }
+
+foreach ($value in @('max-age=300', " `tMAX-AGE `t= 300`t ")) {
+    $headers = [Collections.Hashtable]::new([StringComparer]::Ordinal)
+    $headers['sTrIcT-tRaNsPoRt-SeCuRiTy'] = $value
+    Assert-Psh1Hsts (New-Response 200 $headers)
+    Check $true 'valid HSTS with case-insensitive names and HTTP whitespace'
+}
+$baselineSend = $send
+foreach ($case in @(
+    @{ Values = $null; Category = 'PSH1_HSTS_MISSING' },
+    @{ Values = 'max-age=301'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = 'max-age=300; includeSubDomains'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = 'max-age=300; PRELOAD'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = @('max-age=300', 'max-age=300'); Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = 'max-age=300, max-age=300'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = 'max-age=300; max-age=300'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = 'max-age=300; unknown'; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = ''; Category = 'PSH1_HSTS_POLICY' },
+    @{ Values = "max-age=300`n"; Category = 'PSH1_HSTS_POLICY' }
+)) {
+    # Exercise the complete gate independently for HTML, API, JS, and the final
+    # HTTPS response of a chain. HTTP redirects deliberately carry no HSTS.
+    foreach ($target in @('Page', 'Api', 'Asset', 'Chain')) {
+        $script:state = @{ Mode = ''; Requests = 0; Sleeps = 0 }
+        $script:pageRequests = 0
+        $hstsSend = {
+            param($Method, $Url, $Headers)
+            $response = & $baselineSend $Method $Url $Headers
+            if ($Url -eq 'https://myvocabularybuilder.org/login') { $script:pageRequests++ }
+            $replace = $Url.StartsWith('https://') -and (
+                ($target -eq 'Page' -and $script:state.Requests -eq 1) -or
+                ($target -eq 'Api' -and $Url.Contains('/api/')) -or
+                ($target -eq 'Asset' -and $Url.EndsWith('.js')) -or
+                ($target -eq 'Chain' -and $script:pageRequests -eq 2))
+            if ($replace) {
+                $response.Headers.Remove('Strict-Transport-Security')
+                if ($null -ne $case.Values) { $response.Headers['Strict-Transport-Security'] = $case.Values }
+            }
+            return $response
+        }
+        Expect-Rejection { Invoke-Psh1ReleaseBAcceptance $hstsSend $delay } "$target HSTS rejected" $case.Category
+        Check ($script:state.Sleeps -eq 0) 'HSTS mismatch is not retried'
+    }
+}
+$duplicateNames = [Collections.Hashtable]::new([StringComparer]::Ordinal)
+$duplicateNames['Strict-Transport-Security'] = 'max-age=300'
+$duplicateNames['strict-transport-security'] = 'max-age=300'
+Expect-Rejection { Assert-Psh1Hsts (New-Response 200 $duplicateNames) } 'duplicate header names' 'PSH1_HSTS_POLICY'
 Write-Host ("PSH-1 offline checks passed: {0}; failed: 0; no production requests." -f $script:passed)

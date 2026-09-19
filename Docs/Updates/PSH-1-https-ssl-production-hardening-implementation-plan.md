@@ -1,6 +1,6 @@
 # PSH-1 — HTTPS/SSL Production Hardening Implementation Plan
 
-**Current status — September 18, 2026: PSH-1 Release A is production complete.** See [Release A Production Completion](#18-release-a-production-completion). Sections 1–17 preserve the earlier planning and local implementation evidence; their pending-deployment statements describe those earlier stages. Release B is not implemented.
+**Current status — September 18, 2026: PSH-1 Release A is production complete.** See [Release A Production Completion](#18-release-a-production-completion). Sections 1–17 preserve the earlier planning and local implementation evidence; their pending-deployment statements describe those earlier stages. Release B is implemented locally as of September 19, 2026; production verification is pending. See [Release B local implementation](#19-release-b-local-implementation).
 
 Date: 2026-09-18. Planning only. Authority: [completed PSH-1 analysis](PSH-1-https-ssl-production-hardening-analysis.md), read in full and reconciled against the current repository. No factual contradiction requiring an analysis amendment was found.
 
@@ -451,3 +451,42 @@ Production now has a valid certificate for `myvocabularybuilder.org`, working HT
 Retain the accepted Release A artifact/configuration as the HTTPS-enabled recovery baseline and follow section 13's manual recovery procedure; no automatic rollback exists. Certificate renewal/challenge compatibility and secure recovery access remain ongoing operational responsibilities, not newly proven by these probes. Recheck effective IIS/provider behavior and exact escaping/query behavior when configurations or hosting change. Keep 1-Click disabled. Browsers can cache a 301 independently of HSTS, so reverting server rules does not guarantee a return to HTTP; recovery must preserve working HTTPS and certificates. Once Release B begins, its separate HSTS cache/recovery implications also apply. No current HSTS protection is claimed.
 
 This closeout changed documentation only. It performed no staging, commit, push, merge, PR, deployment, production probe, hosting/certificate/DNS/environment change or database operation. The production and Git actions above occurred before this task and are recorded as supplied evidence.
+
+## 19. Release B local implementation
+
+September 19, 2026: **IMPLEMENTED LOCALLY; NOT PRODUCTION VERIFIED.** Release A remains production complete. Sections 1–18 preserve planning and Release A history; this section supersedes their statements that Release B is unimplemented. No production probe or deployment was performed for this implementation.
+
+### Application and acceptance behavior
+
+- `VocabularyApp.WebApi/Program.cs` registers standard ASP.NET Core `AddHsts` with `MaxAge = TimeSpan.FromSeconds(300)`, `IncludeSubDomains = false`, and `Preload = false`. Immediately after `Build`, a Production-only rejoining `UseWhen` branch matches `myvocabularybuilder.org` case-insensitively and calls `UseHsts`. The middleware checks HTTPS and retains its built-in localhost exclusions. It precedes Swagger, default/static files, CORS, authentication and authorization.
+- The exact initial policy is **`Strict-Transport-Security: max-age=300`**. Five minutes is intentional for the first rollout; no automatic increase, subdomain coverage or preload is configured. Development, Testing, Staging, HTTP and unsupported hosts receive no application HSTS. Local HTTP development and launch settings are unchanged.
+- Root IIS URL Rewrite remains the sole redirect/rejection authority. Source `web.config`, settings, publish/deploy scripts and the strict XML validator are unchanged. No forwarded headers or application HTTPS redirection were added. Authentication, JWT, CORS, API/Angular behavior, WordsAPI and schema remain unchanged.
+- `scripts/ci/Test-ProductionHttps.ps1` now invokes `Invoke-Psh1ReleaseBAcceptance` and requires HSTS unconditionally for this release; there is no optional switch that can bypass the Release B gate. This replaces the transitional phase-switch proposal in earlier planning sections. All existing Release A checks remain. The script asserts HSTS on the fresh HTTPS login page, final canonical HTTPS pages after bounded redirect traversal, each HTTPS profile 401, and the HTTPS JavaScript asset. HTTP redirects are never used as HSTS evidence.
+- Header names and directive names compare case-insensitively; HTTP spaces/tabs around the single `max-age=300` directive are accepted. Multiple values, comma-coalesced policies, duplicate directives, wrong duration and any extra directives fail. Missing and unexpected headers yield sanitized `PSH1_HSTS_MISSING` / `PSH1_HSTS_POLICY` categories. Existing TLS validation, target restrictions, no-follow transport, retry limits and recovery semantics remain.
+- `.github/workflows/backend-tests.yml` labels the offline and post-deployment checks for Release B. Its existing invocation now requires HSTS without changing deployment permissions, credentials, artifact integrity or concurrency.
+
+### Tests and local validation
+
+`HttpsHardeningApiTests.cs` retains CORS/authentication coverage, updates the former production HSTS-deferral assertion, and adds 13 cases covering exact policy, early Swagger responses, API 401, static files/default document/SPA fallback, environment exclusions, HTTP, localhost, temporary hosts and subdomains. Explicit HTTPS `BaseAddress` supplies TestServer's scheme and canonical host; TestServer does not terminate TLS or execute IIS rules. Static coverage uses a private temporary fixture, independent of generated Angular content.
+
+`Test-Psh1Scripts.ps1` preserves prior XML and Release A negative cases and adds valid mixed-case/whitespace HSTS, missing/wrong/overbroad policies, duplicate header names/values, combined policies, unknown directives and malformed whitespace. Invalid policies are exercised separately at the HTML, API, asset and final redirect-chain response checks, including failure without retries.
+
+| Validation | Result |
+|---|---|
+| `dotnet build VocabularyApp.sln --configuration Release` | Passed, 0 warnings, 0 errors |
+| Complete backend suite after final test changes | **196 passed, 0 failed, 0 skipped** |
+| PowerShell 7 offline PSH-1 suite | **279 checks passed, 0 failed** |
+| Angular production build, unchanged source | Passed; existing word-lookup SCSS budget warning (2.80 kB against 2.05 kB) |
+| Existing `Publish-VocabularyApp.ps1`, clean tracked-source snapshot plus actual Angular build assets | Passed all package, asset hash, settings digest, portable runtime and ANCM checks |
+| Actual published XML plus mutation/offline suite | **282 checks passed, 0 failed**; Release A rules retained and rewrite-removal mutation rejected |
+| `git diff --check` and final status/diff inspection | Passed; eight intended modified files, no staged changes |
+
+The local publish artifact is `C:\Users\Owner\AppData\Local\Temp\VocabularyApp-publish-ef7f1f92cd344fc9b0cd0bcdf8113ec8`. It is local validation output, not an uploaded or approved deployment artifact. Clean snapshot packaging avoids known ignored archive contamination without weakening safeguards. The publish restore emitted NU1900 because sandbox networking blocked NuGet vulnerability metadata; publication used cached packages successfully, but a fresh vulnerability audit was not completed. Node's initial sandbox path-access failure was resolved by running the authorized local build outside the sandbox. No Angular source was edited. Git ownership checks used a temporary process-selected global config file; the user's persistent Git configuration was not changed.
+
+`Docs/README.md` and `Docs/Deployment/SmarterASP-Manual-Deployment.md` now distinguish local implementation from pending production verification and document the initial policy and mandatory acceptance checks. The historical analysis is unchanged.
+
+### Pending production acceptance
+
+Review and the separately authorized Git/CI/production release process remain required. After approved deployment, run the existing mandatory transport/HSTS gate and manual authenticated HTTPS smoke; record production evidence before marking Release B complete. Confirm the application sees HTTPS and the host preserves HSTS. If either fails, stop and investigate; do not add forwarded-header trust or alter Release A enforcement. IIS-generated errors/offline responses do not pass through application HSTS middleware.
+
+Retain Release A as the HTTPS-enabled recovery baseline. Keep certificates/HTTPS operational: removing HSTS does not erase cached browser policy, which can persist for 300 seconds after the last received header. No commit, push, merge, deployment, production configuration change, certificate/DNS change or live acceptance request was performed. SmarterASP.NET 1-Click Force HTTPS was untouched and must remain disabled.

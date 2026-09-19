@@ -1,5 +1,5 @@
-# Release A only. Dot-source for offline tests; execute only for approved live acceptance.
-# No credentials, HSTS requirement, automatic redirects, or deployment actions.
+# Release B, including all Release A checks. Dot-source for offline tests;
+# execute only for approved live acceptance. No credentials or deployment actions.
 function Assert-Psh1CanonicalUri {
     param([string] $Text, [switch] $AllowHttp)
     $uri = $null
@@ -14,8 +14,24 @@ function Assert-Psh1CanonicalUri {
 
 function Get-Psh1Header {
     param($Response, [string] $Name)
-    if ($Response.Headers.ContainsKey($Name)) { return @($Response.Headers[$Name]) }
-    return @()
+    # Also support case-sensitive dictionaries in fixtures; HTTP names ignore case.
+    foreach ($key in $Response.Headers.Keys) {
+        if ([string]::Equals($key, $Name, [StringComparison]::OrdinalIgnoreCase)) {
+            foreach ($value in @($Response.Headers[$key])) { $value }
+        }
+    }
+}
+
+function Assert-Psh1Hsts {
+    param($Response)
+    $values = @(Get-Psh1Header $Response 'Strict-Transport-Security')
+    if ($values.Count -eq 0) { throw 'PSH1_HSTS_MISSING' }
+    # One field value, one directive. Reject duplicate/coalesced policies and any
+    # extra directives, including includeSubDomains/preload. Permit HTTP OWS only.
+    if ($values.Count -ne 1 -or
+        $values[0] -notmatch '\A[\t ]*max-age[\t ]*=[\t ]*300[\t ]*\z') {
+        throw 'PSH1_HSTS_POLICY'
+    }
 }
 
 function Assert-Psh1Page {
@@ -57,6 +73,7 @@ function Test-Psh1RedirectChain {
         if ($response.Status -notin @(301, 302, 303, 307, 308)) {
             $null = Assert-Psh1CanonicalUri $Url
             Assert-Psh1Page $response
+            Assert-Psh1Hsts $response
             return
         }
         if ($hop -eq 5) { throw 'PSH1_REDIRECT_LIMIT' }
@@ -67,7 +84,7 @@ function Test-Psh1RedirectChain {
     }
 }
 
-function Invoke-Psh1ReleaseAAcceptance {
+function Invoke-Psh1ReleaseBAcceptance {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][scriptblock] $Send,
@@ -87,10 +104,12 @@ function Invoke-Psh1ReleaseAAcceptance {
             }
             if (-not $retry) { break }
             if ($attempt -eq 6) { throw 'PSH1_READINESS_TIMEOUT' }
-            Write-Host ("Release A readiness retry {0}/6." -f $attempt)
+            Write-Host ("Release B readiness retry {0}/6." -f $attempt)
             & $Delay 5
         }
         Assert-Psh1Page $page
+        $check = 'HTTPS page HSTS'
+        Assert-Psh1Hsts $page
         $paths = @(
             '/login',
             '/dictionary?term=council',
@@ -133,6 +152,7 @@ function Invoke-Psh1ReleaseAAcceptance {
                 @(Get-Psh1Header $response 'Access-Control-Allow-Credentials').Count -ne 0) {
                 throw 'PSH1_API_CONTRACT'
             }
+            Assert-Psh1Hsts $response
         }
 
         $check = 'Same-origin JavaScript asset'
@@ -147,13 +167,14 @@ function Invoke-Psh1ReleaseAAcceptance {
             @(Get-Psh1Header $response 'Location').Count -ne 0) {
             throw 'PSH1_ASSET_CONTRACT'
         }
+        Assert-Psh1Hsts $response
         $response = Invoke-Psh1Probe $Send 'GET' ('http://myvocabularybuilder.org' + $path)
         Assert-Psh1Redirect $response ('https://myvocabularybuilder.org' + $path)
-        Write-Host 'Release A transport acceptance passed. API check is an anonymous 401 challenge; authenticated manual smoke is still required. HSTS is deferred.'
+        Write-Host 'Release B transport acceptance passed, including Release A checks and HSTS max-age=300 only. API check is an anonymous 401 challenge; authenticated manual smoke is still required.'
     } catch {
         # Only constant check labels and allowlisted categories reach logs.
         $category = 'PSH1_UNEXPECTED'
-        if ($_.Exception.Message -cmatch '^PSH1_(NETWORK|TLS|RESPONSE_SIZE|PAGE_CONTRACT|UNSAFE_TARGET|REDIRECT_CONTRACT|REDIRECT_LOOP|REDIRECT_LIMIT|READINESS_TIMEOUT|HTTP_REJECTION|API_CONTRACT|ASSET_REFERENCE|ASSET_CONTRACT)$') {
+        if ($_.Exception.Message -cmatch '^PSH1_(NETWORK|TLS|RESPONSE_SIZE|PAGE_CONTRACT|UNSAFE_TARGET|REDIRECT_CONTRACT|REDIRECT_LOOP|REDIRECT_LIMIT|READINESS_TIMEOUT|HTTP_REJECTION|API_CONTRACT|ASSET_REFERENCE|ASSET_CONTRACT|HSTS_MISSING|HSTS_POLICY)$') {
             $category = $_.Exception.Message
         }
         throw ("Deployment completed but production acceptance failed. Check: {0}; category: {1}. Manual recovery required; no automatic rollback." -f $check, $category)
@@ -212,7 +233,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $client.Timeout = [TimeSpan]::FromSeconds(10)
     $client.MaxResponseContentBufferSize = 2MB
     try {
-        Invoke-Psh1ReleaseAAcceptance -Send {
+        Invoke-Psh1ReleaseBAcceptance -Send {
             param($Method, $Url, $Headers)
             Invoke-Psh1HttpRequest $client $Method $Url $Headers
         }
