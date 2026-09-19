@@ -1,5 +1,7 @@
 # PSH-1 — HTTPS/SSL Production Hardening Analysis
 
+**Historical analysis:** This document preserves the pre-implementation findings from September 18, 2026. Release A subsequently completed production verification on September 18, and Release B completed production deployment and verification on September 19, 2026. Statements below about missing enforcement or inactive HSTS describe the historical baseline. See the [Release B production completion record](PSH-1-https-ssl-production-hardening-implementation-plan.md#20-release-b-production-completion) for the current state: application-managed `max-age=300`, with no `includeSubDomains` or `preload`, layered on the established IIS enforcement policy.
+
 Updated: 2026-09-18, following the user's manual production verification on the same date. This revision supersedes the initial blocked assessment.
 
 Evidence sources: repository inspection, the user's supplied production observations (accepted as verified), and primary framework documentation. The assistant did not perform new live-site tests or change hosting settings. The certificate installation described below was performed manually by the user during verification. Only this existing analysis document was updated. No implementation plan, application/configuration changes, deployment, commit, or push was performed.

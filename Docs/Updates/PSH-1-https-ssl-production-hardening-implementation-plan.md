@@ -1,6 +1,6 @@
 # PSH-1 — HTTPS/SSL Production Hardening Implementation Plan
 
-**Current status — September 18, 2026: PSH-1 Release A is production complete.** See [Release A Production Completion](#18-release-a-production-completion). Sections 1–17 preserve the earlier planning and local implementation evidence; their pending-deployment statements describe those earlier stages. Release B is implemented locally as of September 19, 2026; production verification is pending. See [Release B local implementation](#19-release-b-local-implementation).
+**Current status - September 19, 2026: PSH-1 Releases A and B are production complete.** See [Release A Production Completion](#18-release-a-production-completion) and [Release B Production Completion](#20-release-b-production-completion). Sections 1-19 preserve historical planning, implementation and verification stages; their pending-deployment or inactive-HSTS statements are superseded by section 20.
 
 Date: 2026-09-18. Planning only. Authority: [completed PSH-1 analysis](PSH-1-https-ssl-production-hardening-analysis.md), read in full and reconciled against the current repository. No factual contradiction requiring an analysis amendment was found.
 
@@ -454,7 +454,7 @@ This closeout changed documentation only. It performed no staging, commit, push,
 
 ## 19. Release B local implementation
 
-September 19, 2026: **IMPLEMENTED LOCALLY; NOT PRODUCTION VERIFIED.** Release A remains production complete. Sections 1–18 preserve planning and Release A history; this section supersedes their statements that Release B is unimplemented. No production probe or deployment was performed for this implementation.
+Historical local-stage record, September 19, 2026: **IMPLEMENTED LOCALLY; NOT YET PRODUCTION VERIFIED AT THAT STAGE.** Production completion is now recorded in section 20. Release A remains production complete. Sections 1–18 preserve planning and Release A history; this section supersedes their statements that Release B is unimplemented. No production probe or deployment was performed for this implementation.
 
 ### Application and acceptance behavior
 
@@ -483,10 +483,78 @@ September 19, 2026: **IMPLEMENTED LOCALLY; NOT PRODUCTION VERIFIED.** Release A 
 
 The local publish artifact is `C:\Users\Owner\AppData\Local\Temp\VocabularyApp-publish-ef7f1f92cd344fc9b0cd0bcdf8113ec8`. It is local validation output, not an uploaded or approved deployment artifact. Clean snapshot packaging avoids known ignored archive contamination without weakening safeguards. The publish restore emitted NU1900 because sandbox networking blocked NuGet vulnerability metadata; publication used cached packages successfully, but a fresh vulnerability audit was not completed. Node's initial sandbox path-access failure was resolved by running the authorized local build outside the sandbox. No Angular source was edited. Git ownership checks used a temporary process-selected global config file; the user's persistent Git configuration was not changed.
 
-`Docs/README.md` and `Docs/Deployment/SmarterASP-Manual-Deployment.md` now distinguish local implementation from pending production verification and document the initial policy and mandatory acceptance checks. The historical analysis is unchanged.
+At local implementation closeout, `Docs/README.md` and `Docs/Deployment/SmarterASP-Manual-Deployment.md` distinguished local implementation from pending production verification and documented the initial policy and mandatory acceptance checks. The historical analysis was unchanged at that stage. Current production completion is recorded in section 20.
 
-### Pending production acceptance
+### Historical pending production acceptance (completed; see section 20)
 
-Review and the separately authorized Git/CI/production release process remain required. After approved deployment, run the existing mandatory transport/HSTS gate and manual authenticated HTTPS smoke; record production evidence before marking Release B complete. Confirm the application sees HTTPS and the host preserves HSTS. If either fails, stop and investigate; do not add forwarded-header trust or alter Release A enforcement. IIS-generated errors/offline responses do not pass through application HSTS middleware.
+At local implementation closeout, review and the separately authorized Git/CI/production release process were still required, followed by the mandatory transport/HSTS gate and manual authenticated HTTPS smoke. These stages are now complete as recorded in section 20. For subsequent deployments, retain those gates. Confirm the application sees HTTPS and the host preserves HSTS. If either fails, stop and investigate; do not add forwarded-header trust or alter Release A enforcement. IIS-generated errors/offline responses do not pass through application HSTS middleware.
 
 Retain Release A as the HTTPS-enabled recovery baseline. Keep certificates/HTTPS operational: removing HSTS does not erase cached browser policy, which can persist for 300 seconds after the last received header. No commit, push, merge, deployment, production configuration change, certificate/DNS change or live acceptance request was performed. SmarterASP.NET 1-Click Force HTTPS was untouched and must remain disabled.
+
+## 20. Release B Production Completion
+
+**September 19, 2026: PSH-1 Release B is production complete.** This section records production evidence supplied by the user and reconciled with local Git history. No new production probes were performed during this documentation closeout. No workflow URL, artifact ID/digest, exact verification time or individual job-log details were supplied or inferred.
+
+### Release progression and CI/CD evidence
+
+Before this documentation update, local master was clean and pointed to merge commit 8cb55ce. The completed stages are:
+
+| Stage | Verified result |
+|---|---|
+| Local implementation | Completed; validation evidence retained in section 19 |
+| Final pre-commit review | Approved for commit |
+| Implementation commit | 4e05588 - Implement PSH-1 Release B HSTS hardening |
+| Merge commit / deployed revision | 8cb55ce - Merge PSH-1 Release B HSTS hardening |
+| GitHub Actions workflow | Merge PSH-1 Release B HSTS hardening #60 |
+| Trigger and overall status | Push to master; Success |
+| Production approval | Required and received |
+| Backend / Integration Tests | Successful |
+| Frontend Tests | Successful |
+| Build / Publish Artifact | Successful |
+| Deploy to SmarterASP.NET | Successful through the existing controlled deployment process |
+| Production HSTS verification | Completed by independent PowerShell/curl check below |
+| Authenticated production smoke | Completed successfully as described below |
+
+The workflow result records successful CI/CD and deployment; it does not supply additional per-probe output or justify inventing test counts for that workflow. Local validation remains separately recorded: Release build with zero warnings/errors, 196 backend tests, 279 offline script checks, 282 publish/artifact checks, Angular production build and git diff --check passed. The existing Angular SCSS budget warning and publish NU1900 remain non-blocking observations. NU1900 means fresh NuGet vulnerability metadata was unavailable, not that a fresh vulnerability audit succeeded.
+
+### Independent production header verification
+
+After deployment, the user supplied this independent PowerShell/curl check:
+
+~~~powershell
+curl.exe -I https://myvocabularybuilder.org/login
+~~~
+
+Observed production response:
+
+~~~http
+HTTP/1.1 200 OK
+Strict-Transport-Security: max-age=300
+Server: Microsoft-IIS/10.0
+~~~
+
+The Strict-Transport-Security header was present, max-age was exactly 300 seconds, and includeSubDomains and preload were absent. This directly verifies the approved initial policy on the tested HTTPS login HEAD response; it is not an exhaustive survey of production responses.
+
+### Authenticated application smoke
+
+After deployment and direct header verification, a successful authenticated production smoke test covered HTTPS application access, login, word search/lookup, access to My Vocabulary, and add-to-vocabulary functionality. Normal functionality remained operational for those tested flows. This is smoke coverage, not exhaustive production testing; no broader route, quiz, account or failure-path coverage is inferred. No credentials, tokens or account identifiers are recorded.
+
+### Resulting production posture and ongoing policy
+
+Release A remains the established HTTP enforcement architecture: the production certificate is installed, source-controlled IIS URL Rewrite upgrades safe navigation to canonical HTTPS with the established path/query policy, and rejects insecure API and unsafe HTTP requests according to the Release A 403 policy. Development-only CORS separation remains in place. Release A's recorded production evidence remains valid; the independent check above is an HTTPS header check, not a new raw-HTTP test record.
+
+Release B layers standard ASP.NET Core application-managed HSTS on successful HTTPS, only in Production under the approved canonical-host policy for myvocabularybuilder.org. The verified initial production configuration is:
+
+~~~http
+Strict-Transport-Security: max-age=300
+~~~
+
+- max-age: 300 seconds, intentionally five minutes for the initial rollout.
+- includeSubDomains: false.
+- preload: false.
+
+HSTS does not replace IIS redirects/rejections. No competing ASP.NET Core HTTPS redirect authority or forwarded headers were introduced; production CORS architecture was not changed. **SmarterASP.NET 1-Click Force HTTPS remains disabled.**
+
+The five-minute duration is not designated as the permanent long-term policy. Any future increase requires a separate explicit decision after an appropriate observation period, its own review and rollout; no duration increase, subdomain coverage or preload enrollment is authorized by this completion record. Preserve working HTTPS and certificates during recovery because cached HSTS can persist for 300 seconds after the last header. The existing recovery and certificate-renewal responsibilities remain applicable.
+
+This closeout changed existing documentation only. The commits, merge, approval, deployment and production tests above occurred before this documentation task and are recorded as supplied evidence. Nothing was staged, committed, pushed, merged, deployed or changed in production during this task; no application code, tests, scripts, workflows, configuration or HSTS policy was altered.
