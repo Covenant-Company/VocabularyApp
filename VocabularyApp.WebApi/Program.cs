@@ -13,6 +13,14 @@ using VocabularyApp.WebApi.Services;
 AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddHsts(options =>
+{
+    // Short initial rollout policy; increases require separate review.
+    options.MaxAge = TimeSpan.FromSeconds(300);
+    options.IncludeSubDomains = false;
+    options.Preload = false;
+});
+
 // Add services to the container.
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
@@ -118,6 +126,13 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+if (app.Environment.IsProduction())
+{
+    app.UseWhen(context => string.Equals(context.Request.Host.Host,
+        "myvocabularybuilder.org", StringComparison.OrdinalIgnoreCase),
+        productionHost => productionHost.UseHsts());
+}
 
 app.UseSwagger();
 app.UseSwaggerUI(c =>
