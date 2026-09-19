@@ -1,5 +1,7 @@
 # PSH-1 — HTTPS/SSL Production Hardening Implementation Plan
 
+**Current status — September 18, 2026: PSH-1 Release A is production complete.** See [Release A Production Completion](#18-release-a-production-completion). Sections 1–17 preserve the earlier planning and local implementation evidence; their pending-deployment statements describe those earlier stages. Release B is not implemented.
+
 Date: 2026-09-18. Planning only. Authority: [completed PSH-1 analysis](PSH-1-https-ssl-production-hardening-analysis.md), read in full and reconciled against the current repository. No factual contradiction requiring an analysis amendment was found.
 
 This document specifies future implementation and rollout. It does not authorize or record implementation, production changes, a deployment, or Git operations. Only this plan document was created during this task.
@@ -383,3 +385,69 @@ No production acceptance request, deployment, provider-setting change, certifica
 6. Retain accepted Release A as the HTTPS-enabled recovery baseline. Only after review, normal Git/CI gates, approved successful deployment and every automatic/manual check above may Release B implement the separately reviewed 300-second HSTS policy, without subdomain or preload directives.
 
 For failure after deployment, pause further approvals and use sanitized provider diagnostics. Restore a compatible known-good HTTPS-enabled artifact/root configuration or apply a reviewed fix, preserving ANCM and working certificates. If emergency restoration of pre-A configuration reopens HTTP, protect the application with maintenance/unavailability until enforcement is restored and retested. Do not bypass the new validator to blindly deploy an old artifact, enable a competing redirect owner, or treat destination-file preservation as a backup. Section 13 contains the detailed manual recovery procedure. Release A readiness for review does not authorize deployment or Release B.
+
+## 18. Release A Production Completion
+
+Production completion verification date: **September 18, 2026**. **PSH-1 Release A is production complete.** This section records production evidence supplied by the user, reconciled with the local Git history and configured workflow. No additional production requests were made during this documentation closeout. No verification time, artifact ID/digest, run URL or individual CI log output has been supplied or inferred.
+
+### Git and automated deployment evidence
+
+Before this closeout, local `master` was clean, reported up to date with `origin/master`, and pointed to `1fdd3f5fba78361b0bb5b3e435153ba6a678ac09`.
+
+| Evidence | Recorded result |
+|---|---|
+| Implementation commit | `745b490` — Implement PSH-1 HTTPS production hardening Release A |
+| Production merge | `1fdd3f5` — Merge PSH-1 HTTPS production hardening Release A |
+| Reviewed implementation and Git delivery | Committed, feature branch pushed, merged to `master`, and master push triggered CI/CD |
+| GitHub Actions run | **Merge PSH-1 HTTPS production hardening Release A #58** — **Success** |
+| Backend / Integration Tests | Successful |
+| Frontend Tests | Successful |
+| Build / Publish Artifact | Successful; expected deployment artifact produced |
+| Production approval | Granted |
+| Deploy to SmarterASP.NET | Successful; MSDeploy completed successfully |
+
+The job/run outcomes and approval above are supplied production evidence. Repository inspection confirms that backend/frontend gates precede build/publish, actual published XML validation precedes upload, downloaded artifact validation precedes MSDeploy, and the mandatory `Accept Release A production HTTPS transport (HSTS deferred)` step follows successful MSDeploy. The deployment workflow completed successfully, so the configured acceptance step did not fail. Individual assertion logs were not supplied; this record does not invent per-probe automatic results. The configured anonymous API 401 check remains authentication-boundary evidence, distinct from the manual authenticated functional checks below. Section 17's local test counts remain local validation evidence, not newly observed run #58 counts.
+
+### Direct manual HTTP verification
+
+These commands were executed by the user after deployment; they are evidence, not instructions executed by this closeout task. `curl.exe -I` sends HEAD, while the API command below sends GET.
+
+| Executed command | Supplied production response | Evidence and limit |
+|---|---|---|
+| `curl.exe -I --max-redirs 0 http://myvocabularybuilder.org/login` | `HTTP/1.1 301 Moved Permanently`; `Location: https://myvocabularybuilder.org/login`; `Server: Microsoft-IIS/10.0` | Tested safe navigation cannot remain on plaintext HTTP; approved permanent status, canonical HTTPS authority and `/login` path preserved; IIS enforcement observed |
+| `curl.exe -I --max-redirs 0 "http://myvocabularybuilder.org/login?psh1=test"` | `HTTP/1.1 301 Moved Permanently`; `Location: https://myvocabularybuilder.org/login?psh1=test`; `Server: Microsoft-IIS/10.0` | The tested path and query string were preserved |
+| `curl.exe -i --max-redirs 0 http://myvocabularybuilder.org/api/words/lookup/Council` | `HTTP/1.1 403 Forbidden`; `Server: Microsoft-IIS/10.0`; IIS 403 page | Tested insecure API GET was rejected by IIS rather than redirected or processed as a normal API request |
+| `curl.exe -i --max-redirs 0 -X POST -H "Content-Length: 0" http://myvocabularybuilder.org/login` | `HTTP/1.1 403 Forbidden`; `Server: Microsoft-IIS/10.0`; no redirect `Location` header | Tested zero-length unsafe HTTP POST was rejected instead of redirected |
+
+An earlier `curl.exe -i --max-redirs 0 -X POST http://myvocabularybuilder.org/login` returned `411 Length Required` from `Microsoft-HTTPAPI/2.0` because it omitted an explicit content length. That request did not validly test the IIS PSH-1 unsafe-method rule. The corrected zero-length POST supplies the acceptance evidence; the initial 411 is diagnostic history, not a Release A failure. These direct observations do not prove every route, method, query combination or encoding case.
+
+### Chrome HTTPS upgrade distinction
+
+In Incognito Chrome, explicitly entering `http://myvocabularybuilder.org/login` produced a DevTools entry for GET of that URL with `307 Temporary Redirect`, `Location: https://myvocabularybuilder.org/login`, and `Non-Authoritative-Reason: HttpsUpgrades`. This was Chrome's browser-generated HTTPS upgrade, **not the IIS server response and not evidence of HSTS**. The subsequent direct curl HEAD request established the intended server-side 301 for the tested navigation request. Do not diagnose that browser-generated 307 as a server rule mismatch.
+
+### Authenticated HTTPS browser smoke
+
+The user performed an authenticated production smoke test in an Incognito browser over HTTPS:
+
+1. Login succeeded and the authenticated Vocabulary Builder page loaded.
+2. Existing word `council` loaded with definitions and correctly appeared as already in the user's vocabulary.
+3. Lookup of `government` succeeded and returned definitions.
+4. Adding `government` succeeded; My Vocabulary subsequently displayed it, with **27 words total**.
+
+This establishes that tested Angular loading/navigation, HTTPS authentication, authenticated API usage, lookup, vocabulary persistence and subsequent retrieval/display remained functional after Release A. It is separate from automated anonymous acceptance. No additional pronunciation, quiz, route or account-wide coverage is inferred, and no credentials, account identifiers, tokens or authorization data are recorded.
+
+### Completion determination and current security state
+
+The Release A gates are satisfied by the combined evidence: reviewed implementation committed/pushed/merged, successful backend/frontend/build/publish gates, production approval, successful MSDeploy/workflow, direct canonical HTTP-to-HTTPS 301 with tested path/query preservation, tested API 403, tested unsafe POST 403 without redirection, operational HTTPS application, and successful authenticated functional/persistence smoke.
+
+Production now has a valid certificate for `myvocabularybuilder.org`, working HTTPS application access and active source-controlled IIS enforcement. Safe HTTP navigation redirects to canonical HTTPS; insecure API and unsafe-method requests are rejected according to the deployed Release A policy. Production does not grant Development CORS origins; Development retains its local policy. The direct manual transport evidence is limited to the requests recorded above, and the automated result is recorded at workflow level.
+
+**HSTS remains intentionally inactive.** Release A enabled neither HSTS nor `includeSubDomains` nor `preload`. Forwarded-header behavior is unchanged. **SmarterASP.NET 1-Click Force HTTPS remains disabled**; repository-controlled root IIS configuration remains the single redirect authority.
+
+### Release B prerequisite and continuing operations
+
+**The Release A production prerequisite for Release B is now satisfied.** Release B remains a separate controlled change and has not been implemented or authorized by this closeout. Its planned posture is unchanged: application-managed HSTS, initial `max-age=300` seconds, `includeSubDomains=false`, `preload=false`. It still requires its own implementation/review, tests, commit/push, CI gates, production approval, deployment and production HSTS verification. Release A completion is not full PSH-1 completion.
+
+Retain the accepted Release A artifact/configuration as the HTTPS-enabled recovery baseline and follow section 13's manual recovery procedure; no automatic rollback exists. Certificate renewal/challenge compatibility and secure recovery access remain ongoing operational responsibilities, not newly proven by these probes. Recheck effective IIS/provider behavior and exact escaping/query behavior when configurations or hosting change. Keep 1-Click disabled. Browsers can cache a 301 independently of HSTS, so reverting server rules does not guarantee a return to HTTP; recovery must preserve working HTTPS and certificates. Once Release B begins, its separate HSTS cache/recovery implications also apply. No current HSTS protection is claimed.
+
+This closeout changed documentation only. It performed no staging, commit, push, merge, PR, deployment, production probe, hosting/certificate/DNS/environment change or database operation. The production and Git actions above occurred before this task and are recorded as supplied evidence.

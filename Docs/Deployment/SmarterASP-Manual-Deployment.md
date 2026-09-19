@@ -365,7 +365,7 @@ For this deployment model:
 
 Do not replace the root ASP.NET Core `web.config` with the Angular-only `web.config`.
 
-PSH-1 Release A is implemented but not deployed by this change. The root IIS rules are the sole transport authority: HTTP API requests and non-GET/HEAD methods receive 403; other HTTP navigation receives 301 to `https://myvocabularybuilder.org` with the original path/query. HTTPS passes through. Keep SmarterASP.NET **1-Click Force HTTPS disabled**; do not add application redirects or forwarded-header trust. HSTS is not enabled in Release A.
+PSH-1 Release A is production complete as verified September 18, 2026; the recorded direct tests establish the tested redirect/path/query and rejection behavior. The deployed root IIS rules are the sole transport authority: HTTP API requests and non-GET/HEAD methods receive 403; other HTTP navigation receives 301 to `https://myvocabularybuilder.org` with the original path/query. HTTPS passes through. Keep SmarterASP.NET **1-Click Force HTTPS disabled**; do not add application redirects or forwarded-header trust. HSTS is not enabled in Release A.
 
 Use the validated CI artifact for deployment. `Publish-VocabularyApp.ps1` checks the actual published XML; `Deploy-SmarterAsp.ps1` repeats the check before MSDeploy. `DoNotDeleteRule` does not preserve destination edits inside root `web.config`: deploy the source-owned complete file. Existing ignored local publish/archive directories can contaminate a local Web SDK publish; use a clean checkout and never weaken artifact checks to accept them.
 
@@ -373,7 +373,7 @@ Before release approval, confirm certificate renewal/challenge requirements, IIS
 
 If acceptance fails after synchronization, the job fails; there is no automatic rollback. Restore the known-good root configuration for an isolated IIS fault or use a reviewed recovery artifact. Restoring pre-PSH configuration can reopen insecure HTTP: keep credential entry unavailable until enforcement is restored and retested. Preserve certificates and HTTPS. CORS recovery must not remove IIS enforcement. Record any manual recovery and repeat the automated checks plus an authorized HTTPS login/lookup/vocabulary/quiz smoke test. Do not record tokens or credentials.
 
-Release B remains blocked until reviewed Release A is approved, deployed and passes automatic transport and manual authenticated checks. See the [implementation and verification record](../Updates/PSH-1-https-ssl-production-hardening-implementation-plan.md#17-release-a-implementation-record).
+The Release A production prerequisite for Release B is satisfied. Release B remains unimplemented and requires its own review, tests, Git/CI process, production approval, deployment and HSTS verification. See the [production completion record](../Updates/PSH-1-https-ssl-production-hardening-implementation-plan.md#18-release-a-production-completion); its operational and recovery caveats remain applicable.
 
 ### Application Path / Site Folder
 
