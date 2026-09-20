@@ -104,6 +104,9 @@ jobs:
       - name: Test PSH-1 artifact and Release B acceptance checks offline
         shell: pwsh
         run: ./scripts/ci/tests/Test-Psh1Scripts.ps1
+      - name: Test production release-candidate safeguard offline
+        shell: pwsh
+        run: ./scripts/ci/tests/Test-ProductionReleaseCandidate.ps1
       - name: Publish and validate application package
         id: publish
         shell: pwsh
@@ -134,6 +137,7 @@ jobs:
     concurrency:
       group: vocabularyapp-production
       cancel-in-progress: false
+      queue: max
     steps:
       - name: Check out deployment script from the tested commit
         uses: actions/checkout@v4
@@ -164,6 +168,7 @@ jobs:
         shell: pwsh
         env:
           DEPLOY_DIRECTORY: ${{ steps.staging.outputs.directory }}
+          RELEASE_GITHUB_TOKEN: ${{ github.token }}
           SMARTERASP_WEBDEPLOY_URL: ${{ vars.SMARTERASP_WEBDEPLOY_URL }}
           SMARTERASP_WEBDEPLOY_USERNAME: ${{ vars.SMARTERASP_WEBDEPLOY_USERNAME }}
           SMARTERASP_SITE_NAME: ${{ vars.SMARTERASP_SITE_NAME }}

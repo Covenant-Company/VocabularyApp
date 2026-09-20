@@ -184,6 +184,7 @@ $start.CreateNoWindow = $true
 $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 $start.Environment.Remove('SMARTERASP_WEBDEPLOY_PASSWORD') | Out-Null
+$start.Environment.Remove('RELEASE_GITHUB_TOKEN') | Out-Null
 foreach ($argument in @(
     '-verb:sync', $source, $destination,
     '-enableRule:DoNotDeleteRule', '-enableRule:AppOffline',
@@ -194,6 +195,8 @@ $process = [Diagnostics.Process]::new()
 $process.StartInfo = $start
 $exitCode = $null
 try {
+    . (Join-Path $PSScriptRoot 'Assert-ProductionReleaseCandidate.ps1')
+    Assert-ProductionReleaseCandidate
     Write-Host 'Starting approved production content synchronization with AppOffline and destination-file preservation.'
     try {
         if (-not $process.Start()) { throw 'Process did not start.' }
@@ -226,4 +229,5 @@ try {
     $start.ArgumentList.Clear()
     $destination = $null
     $env:SMARTERASP_WEBDEPLOY_PASSWORD = $null
+    $env:RELEASE_GITHUB_TOKEN = $null
 }
