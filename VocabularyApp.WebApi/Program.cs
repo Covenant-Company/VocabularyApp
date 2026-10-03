@@ -88,11 +88,19 @@ builder.Services.AddHttpClient<IWordService, WordService>(client =>
     }
 });
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().ConfigureApiBehaviorOptions(options =>
+{
+    options.InvalidModelStateResponseFactory = ApiValidationResponses.Create;
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
+    c.SupportNonNullableReferenceTypes();
+    c.UseAllOfToExtendReferenceSchemas();
+    c.IncludeXmlComments(Path.Combine(AppContext.BaseDirectory, "VocabularyApp.WebApi.xml"));
+    c.SchemaFilter<VocabularyApp.WebApi.Swagger.ApiContractSchemaFilter>();
+    c.OperationFilter<VocabularyApp.WebApi.Swagger.ApiContractOperationFilter>();
     c.SwaggerDoc("v1", new OpenApiInfo
     {
         Title = "Vocabulary App API",

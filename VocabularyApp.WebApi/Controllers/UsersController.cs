@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
@@ -25,110 +26,90 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Registers a new user account
     /// </summary>
+    /// <remarks>Anonymous. Nested auth success. Binding failures are extended ValidationProblemDetails 400; duplicate username/email are application 400; internal failures are safe 500.</remarks>
     /// <param name="request">User registration details</param>
     /// <returns>User information and JWT token if successful</returns>
-    /// <response code="200">User created successfully</response>
-    /// <response code="400">Invalid registration data or user already exists</response>
     [HttpPost("register")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResult<AuthResponse>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<ActionResult<ApiResult<AuthResponse>>> Register([FromBody] CreateUserRequest request)
     {
         try
         {
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-
-                _logger.LogWarning("Invalid registration request: {Errors}", string.Join(", ", errors));
-                return BadRequest(ApiResult<AuthResponse>.ErrorResult($"Validation failed: {string.Join(", ", errors)}"));
-            }
-
             _logger.LogInformation("Registration attempt for username: {Username}", request.Username);
             var result = await _userService.CreateUserAsync(request);
 
-            if (result.Success)
+            if (result.IsSuccess)
             {
                 _logger.LogInformation("User registered successfully: {Username}", request.Username);
-                return Ok(ApiResult<AuthResponse>.SuccessResult(result));
+                if (result.Data is null || !result.Data.Success || result.Data.User is null || string.IsNullOrWhiteSpace(result.Data.Token)) return ApiErrorResults.Internal(HttpContext);
+                return Ok(ApiResult<AuthResponse>.SuccessResult(result.Data));
             }
             else
             {
-                _logger.LogWarning("Registration failed for username: {Username}, Error: {Error}", request.Username, result.ErrorMessage);
-                return BadRequest(ApiResult<AuthResponse>.ErrorResult(result.ErrorMessage ?? "Registration failed"));
+                _logger.LogWarning("Registration failed for username: {Username}, Error: {Error}", request.Username, result.Code);
+                return ApiErrorResults.FromFailure(HttpContext, result);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled error during user registration: {Username}", request.Username);
-            return StatusCode(500, ApiResult<AuthResponse>.ErrorResult("An internal error occurred"));
+            return ApiErrorResults.Internal(HttpContext);
         }
     }
 
     /// <summary>
     /// Authenticates a user and returns a JWT token
     /// </summary>
+    /// <remarks>Anonymous. Nested auth success. Validation 400; invalid_credentials 401; credentials_changed 409; safe internal_error 500.</remarks>
     /// <param name="request">Login credentials</param>
     /// <returns>User information and JWT token if successful</returns>
-    /// <response code="200">Login successful</response>
-    /// <response code="401">Invalid credentials</response>
-    /// <response code="400">Invalid login data</response>
     [HttpPost("login")]
     [AllowAnonymous]
     [ProducesResponseType(typeof(ApiResult<AuthResponse>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 400)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 409)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<ActionResult<ApiResult<AuthResponse>>> Login([FromBody] LoginRequest request)
     {
         try
         {
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-
-                return BadRequest(ApiResult<AuthResponse>.ErrorResult($"Validation failed: {string.Join(", ", errors)}"));
-            }
-
             _logger.LogInformation("Login attempt for username: {Username}", request.Username);
             var result = await _userService.LoginAsync(request);
 
-            if (result.Success)
+            if (result.IsSuccess)
             {
                 _logger.LogInformation("Login successful for username: {Username}", request.Username);
-                return Ok(ApiResult<AuthResponse>.SuccessResult(result));
+                if (result.Data is null || !result.Data.Success || result.Data.User is null || string.IsNullOrWhiteSpace(result.Data.Token)) return ApiErrorResults.Internal(HttpContext);
+                return Ok(ApiResult<AuthResponse>.SuccessResult(result.Data));
             }
             else
             {
                 _logger.LogWarning("Login failed for username: {Username}", request.Username);
-                return Unauthorized(ApiResult<AuthResponse>.ErrorResult(result.ErrorMessage ?? "Invalid credentials"));
+                return ApiErrorResults.FromFailure(HttpContext, result);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Unhandled error during login: {Username}", request.Username);
-            return StatusCode(500, ApiResult<AuthResponse>.ErrorResult("An internal error occurred"));
+            return ApiErrorResults.Internal(HttpContext);
         }
     }
 
     /// <summary>
     /// Gets the current user's profile information
     /// </summary>
+    /// <remarks>Bearer required. Empty framework challenge differs from application invalid_token 401. Missing account is user_not_found 404; internal failures are safe 500.</remarks>
     /// <returns>Current user information</returns>
-    /// <response code="200">User profile retrieved successfully</response>
-    /// <response code="401">Not authenticated</response>
-    /// <response code="404">User not found</response>
     [HttpGet("profile")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResult<UserDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult<object>), 401)]
-    [ProducesResponseType(typeof(ApiResult<object>), 404)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 404)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<ActionResult<ApiResult<UserDto>>> GetProfile()
     {
         try
@@ -137,14 +118,14 @@ public class UsersController : ControllerBase
             if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             {
                 _logger.LogWarning("Invalid user ID claim in token");
-                return Unauthorized(ApiResult<UserDto>.ErrorResult("Invalid token"));
+                return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
             }
 
             var user = await _userService.GetUserByIdAsync(userId);
             if (user == null)
             {
                 _logger.LogWarning("User not found for ID: {UserId}", userId);
-                return NotFound(ApiResult<UserDto>.ErrorResult("User not found"));
+                return ApiErrorResults.Create(HttpContext, ServiceFailureType.NotFound, "user_not_found");
             }
 
             return Ok(ApiResult<UserDto>.SuccessResult(user));
@@ -152,74 +133,65 @@ public class UsersController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error retrieving user profile");
-            return StatusCode(500, ApiResult<UserDto>.ErrorResult("An internal error occurred"));
+            return ApiErrorResults.Internal(HttpContext);
         }
     }
 
     /// <summary>
     /// Changes the current user's password
     /// </summary>
+    /// <remarks>Bearer required. Non-generic success wrapper retains null data/error. Validation 400; account/current-password application 401; credentials_changed 409; safe internal_error 500.</remarks>
     /// <param name="request">Current and new password</param>
     /// <returns>Success confirmation</returns>
-    /// <response code="200">Password changed successfully</response>
-    /// <response code="400">Invalid password data</response>
-    /// <response code="401">Not authenticated or invalid current password</response>
     [HttpPost("change-password")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResult), 200)]
-    [ProducesResponseType(typeof(ApiResult), 400)]
-    [ProducesResponseType(typeof(ApiResult), 401)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 409)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<ActionResult<ApiResult>> ChangePassword([FromBody] ChangePasswordRequest request)
     {
         try
         {
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
-
-                return BadRequest(ApiResult.ErrorResult($"Validation failed: {string.Join(", ", errors)}"));
-            }
-
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             {
-                return Unauthorized(ApiResult.ErrorResult("Invalid token"));
+                return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
             }
 
             _logger.LogInformation("Password change attempt for user: {UserId}", userId);
-            var success = await _userService.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword);
+            var result = await _userService.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword);
 
-            if (success)
+            if (result.IsSuccess)
             {
                 _logger.LogInformation("Password changed successfully for user: {UserId}", userId);
+                if (!result.Data) return ApiErrorResults.Internal(HttpContext);
                 return Ok(ApiResult.SuccessResult());
             }
             else
             {
                 _logger.LogWarning("Password change failed for user: {UserId}", userId);
-                return Unauthorized(ApiResult.ErrorResult("Current password is incorrect"));
+                return ApiErrorResults.FromFailure(HttpContext, result);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error changing password");
-            return StatusCode(500, ApiResult.ErrorResult("An internal error occurred"));
+            return ApiErrorResults.Internal(HttpContext);
         }
     }
 
     /// <summary>
     /// Validates the current JWT token
     /// </summary>
+    /// <remarks>Bearer required. Returns UserDto without issuing a token. Empty framework challenge differs from invalid_token/user_unavailable application 401; safe internal_error 500.</remarks>
     /// <returns>Token validation result</returns>
-    /// <response code="200">Token is valid</response>
-    /// <response code="401">Token is invalid or expired</response>
     [HttpGet("validate-token")]
     [Authorize]
     [ProducesResponseType(typeof(ApiResult<UserDto>), 200)]
-    [ProducesResponseType(typeof(ApiResult), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<ActionResult<ApiResult<UserDto>>> ValidateToken()
     {
         try
@@ -227,13 +199,13 @@ public class UsersController : ControllerBase
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
             if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
             {
-                return Unauthorized(ApiResult<UserDto>.ErrorResult("Invalid token"));
+                return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
             }
 
             var user = await _userService.GetUserByIdAsync(userId);
             if (user == null)
             {
-                return Unauthorized(ApiResult<UserDto>.ErrorResult("User no longer exists"));
+                return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "user_unavailable");
             }
 
             return Ok(ApiResult<UserDto>.SuccessResult(user));
@@ -241,25 +213,8 @@ public class UsersController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error validating token");
-            return StatusCode(500, ApiResult<UserDto>.ErrorResult("An internal error occurred"));
+            return ApiErrorResults.Internal(HttpContext);
         }
-    }
-}
-
-public class ApiResult<T>
-{
-    public bool Success { get; set; }
-    public T? Data { get; set; }
-    public string? Error { get; set; }
-
-    public static ApiResult<T> SuccessResult(T data)
-    {
-        return new ApiResult<T> { Success = true, Data = data };
-    }
-
-    public static ApiResult<T> ErrorResult(string error)
-    {
-        return new ApiResult<T> { Success = false, Error = error };
     }
 }
 

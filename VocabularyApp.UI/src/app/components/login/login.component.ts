@@ -4,6 +4,7 @@ import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angula
 import { PasswordInputComponent } from '../password-input/password-input.component';
 import { Router, ActivatedRoute } from '@angular/router';
 import { AuthService } from '../../services/auth.service';
+import { normalizeApiError } from '../../services/api-error';
 
 @Component({
   selector: 'app-login',
@@ -54,16 +55,17 @@ export class LoginComponent implements OnInit {
       this.authService.login(this.loginForm.value).subscribe({
         next: (response) => {
           this.isLoading = false;
-          if (response.success) {
+          if (response.success && response.data?.success && response.data.token && response.data.user) {
             // Login successful, navigate to dashboard
             this.router.navigate(['/dashboard']);
           } else {
-            this.errorMessage = response.message || 'Login failed';
+            this.errorMessage = 'Unable to complete login. Please try again.';
           }
         },
         error: (error) => {
           this.isLoading = false;
-          this.errorMessage = error.error?.message || 'An error occurred during login';
+          const failure = normalizeApiError(error, 'login', 'Unable to complete login. Please try again.');
+          this.errorMessage = Object.values(failure.fieldErrors ?? {}).flat().join(' ') || failure.message;
         }
       });
     }

@@ -18,7 +18,7 @@
         <div class="error-message" *ngIf="signupForm.get('username')?.invalid && signupForm.get('username')?.touched">
           <span *ngIf="signupForm.get('username')?.errors?.['required']">Username is required</span>
           <span *ngIf="signupForm.get('username')?.errors?.['minlength']">Username must be at least 3 characters</span>
-          <span *ngIf="signupForm.get('username')?.errors?.['maxlength']">Username cannot exceed 50 characters</span>
+          <span *ngIf="signupForm.get('username')?.errors?.['maxlength']">Username cannot exceed 100 characters</span>
         </div>
       </div>
 

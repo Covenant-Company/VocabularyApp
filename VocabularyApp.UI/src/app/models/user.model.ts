@@ -1,9 +1,9 @@
 export interface User {
-  id?: number;
+  id: number;
   username: string;
   email: string;
-  createdAt?: Date;
-  lastLoginAt?: Date;
+  createdAt: string;
+  lastLoginAt: string | null;
 }
 
 export interface LoginRequest {
@@ -11,15 +11,15 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface LoginResponse {
+export interface AuthResponseData {
   success: boolean;
-  data?: {
-    token: string;
-    user: User;
-    expiresAt: Date;
-  };
-  message?: string;
+  errorMessage: string | null;
+  user: User | null;
+  token: string | null;
 }
+
+export type LoginResponse = ApiResponse<AuthResponseData>;
+export type RegisterResponse = ApiResponse<AuthResponseData>;
 
 export interface RegisterRequest {
   username: string;
@@ -27,14 +27,11 @@ export interface RegisterRequest {
   password: string;
 }
 
-export interface RegisterResponse {
-  success: boolean;
-  data?: User;
-  message?: string;
-}
-
 export interface ApiResponse<T> {
   success: boolean;
-  data?: T;
-  message?: string;
+  data?: T | null;
+  error?: string | null;
+  message?: string | null;
+  code?: string;
+  traceId?: string;
 }

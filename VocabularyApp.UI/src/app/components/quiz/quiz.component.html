@@ -85,6 +85,7 @@
 
         <div class="space-y-3">
           <button *ngFor="let option of currentQuestion.options" (click)="selectOption(option.optionId)"
+            [disabled]="isSubmitting"
             class="w-full text-left px-4 py-3 border rounded-lg transition-colors duration-200"
             [ngClass]="selectedOptionId === option.optionId ? 'border-primary-500 bg-primary-50 text-primary-800' : 'border-gray-300 hover:border-primary-300 hover:bg-gray-50'">
             {{ option.text }}
@@ -98,12 +99,19 @@
           ← Previous
         </button>
 
-        <button (click)="nextQuestion()" [disabled]="isSubmitting"
+        <button (click)="nextQuestion()" [disabled]="isSubmitting || quizRecoveryRequiresRestart"
           class="px-4 py-2 bg-primary-600 hover:bg-primary-700 disabled:bg-gray-400 text-white rounded-lg transition-colors duration-200">
           <span *ngIf="isSubmitting" class="inline-block animate-spin mr-2">⟳</span>
           {{ currentQuestionIndex === (quizSession.questions.length - 1) ? 'Submit Quiz' : 'Next →' }}
         </button>
       </div>
+    </div>
+
+    <div *ngIf="quizSession && !quizResult && quizRecoveryRequiresRestart" class="mb-6 mt-4">
+      <button (click)="restartQuiz()" [disabled]="isLoading || isSubmitting"
+        class="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg">
+        Start a new quiz
+      </button>
     </div>
 
     <div *ngIf="quizResult" class="bg-white rounded-2xl p-8 shadow-xl">

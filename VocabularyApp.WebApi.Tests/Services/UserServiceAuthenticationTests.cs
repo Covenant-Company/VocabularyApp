@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
@@ -33,18 +34,18 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
             Password = password
         };
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             var service = CreateUserService(serviceContext);
             result = await service.CreateUserAsync(request);
         }
 
-        Assert.True(result.Success);
-        Assert.NotNull(result.User);
-        Assert.Equal(request.Username, result.User.Username);
-        Assert.Equal(request.Email, result.User.Email);
-        Assert.False(string.IsNullOrWhiteSpace(result.Token));
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(result.Data!.User);
+        Assert.Equal(request.Username, result.Data!.User.Username);
+        Assert.Equal(request.Email, result.Data!.User.Email);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data?.Token));
 
         await using var verificationContext = _fixture.CreateContext();
         var persistedUser = await verificationContext.Users
@@ -86,15 +87,17 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
             Password = "Registration test password!"
         };
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext).CreateUserAsync(request);
         }
 
-        Assert.False(result.Success);
-        Assert.Equal("Username is already taken", result.ErrorMessage);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Username is already taken", result.Message);
+        Assert.Equal(ServiceFailureType.Validation, result.FailureType);
+        Assert.Equal("username_taken", result.Code);
+        Assert.Null(result.Data?.Token);
 
         await using var verificationContext = _fixture.CreateContext();
         Assert.Equal(
@@ -127,15 +130,17 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
             Password = "Registration test password!"
         };
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext).CreateUserAsync(request);
         }
 
-        Assert.False(result.Success);
-        Assert.Equal("Email is already registered", result.ErrorMessage);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal("Email is already registered", result.Message);
+        Assert.Equal(ServiceFailureType.Validation, result.FailureType);
+        Assert.Equal("email_taken", result.Code);
+        Assert.Null(result.Data?.Token);
 
         await using var verificationContext = _fixture.CreateContext();
         Assert.Equal(
@@ -151,7 +156,7 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         const string newPassword = "Modern replacement password!";
         var userId = await SeedUserAsync(CreateHistoricalHash(currentPassword));
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
@@ -161,8 +166,9 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         var persistedUser = await ReloadUserAsync(userId);
         var modernHasher = new PasswordHasher<User>();
 
-        Assert.True(result);
+        Assert.True(result.IsSuccess);
         Assert.False(new LegacyPasswordVerifier().IsLegacyFormat(persistedUser.PasswordHash));
+        Assert.True(result.Data);
         Assert.Equal(
             PasswordVerificationResult.Success,
             modernHasher.VerifyHashedPassword(persistedUser, persistedUser.PasswordHash, newPassword));
@@ -181,7 +187,7 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         seedUser.PasswordHash = modernHasher.HashPassword(seedUser, currentPassword);
         var userId = await SeedUserAsync(seedUser);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
@@ -190,8 +196,9 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
 
         var persistedUser = await ReloadUserAsync(userId);
 
-        Assert.True(result);
+        Assert.True(result.IsSuccess);
         Assert.False(new LegacyPasswordVerifier().IsLegacyFormat(persistedUser.PasswordHash));
+        Assert.True(result.Data);
         Assert.Equal(
             PasswordVerificationResult.Success,
             modernHasher.VerifyHashedPassword(persistedUser, persistedUser.PasswordHash, newPassword));
@@ -206,15 +213,18 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         var originalHash = CreateHistoricalHash("Correct legacy password!");
         var userId = await SeedUserAsync(originalHash);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
                 .ChangePasswordAsync(userId, "wrong password", "unused new password");
         }
 
-        Assert.False(result);
+        Assert.False(result.IsSuccess);
         Assert.Equal(originalHash, (await ReloadUserAsync(userId)).PasswordHash);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("current_password_incorrect", result.Code);
+        Assert.False(result.Data);
     }
 
     [Fact]
@@ -226,15 +236,18 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         var originalHash = seedUser.PasswordHash;
         var userId = await SeedUserAsync(seedUser);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
                 .ChangePasswordAsync(userId, "wrong password", "unused new password");
         }
 
-        Assert.False(result);
+        Assert.False(result.IsSuccess);
         Assert.Equal(originalHash, (await ReloadUserAsync(userId)).PasswordHash);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("current_password_incorrect", result.Code);
+        Assert.False(result.Data);
     }
 
     [Fact]
@@ -243,15 +256,18 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         const string malformedHash = "invalid:legacy-looking-value";
         var userId = await SeedUserAsync(malformedHash);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
                 .ChangePasswordAsync(userId, "any password", "unused new password");
         }
 
-        Assert.False(result);
+        Assert.False(result.IsSuccess);
         Assert.Equal(malformedHash, (await ReloadUserAsync(userId)).PasswordHash);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("current_password_incorrect", result.Code);
+        Assert.False(result.Data);
     }
 
     [Fact]
@@ -260,15 +276,18 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
         const string unknownHash = "unsupported-no-colon-stored-value";
         var userId = await SeedUserAsync(unknownHash);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext)
                 .ChangePasswordAsync(userId, "any password", "unused new password");
         }
 
-        Assert.False(result);
+        Assert.False(result.IsSuccess);
         Assert.Equal(unknownHash, (await ReloadUserAsync(userId)).PasswordHash);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("current_password_incorrect", result.Code);
+        Assert.False(result.Data);
     }
 
     [Fact]
@@ -293,7 +312,7 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
             controlledHasher,
             new LegacyPasswordVerifier());
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var serviceContext = _fixture.CreateContext())
         {
             result = await CreateUserService(serviceContext, passwordService)
@@ -302,8 +321,9 @@ public sealed class UserServiceAuthenticationTests : IClassFixture<RelationalDat
 
         var persistedUser = await ReloadUserAsync(userId);
 
-        Assert.True(result);
+        Assert.True(result.IsSuccess);
         Assert.Equal(2, controlledHasher.HashPasswordCallCount);
+        Assert.True(result.Data);
         Assert.Collection(
             hashedPasswords,
             oldReplacement => Assert.Equal(currentPassword, oldReplacement.Password),

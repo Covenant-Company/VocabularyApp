@@ -9,7 +9,7 @@ import { DashboardComponent } from './dashboard.component';
 describe('DashboardComponent', () => {
   let component: DashboardComponent;
   let fixture: ComponentFixture<DashboardComponent>;
-  const user: User = { id: 1, username: 'test-user', email: 'test@example.com' };
+  const user: User = { id: 1, username: 'test-user', email: 'test@example.com', createdAt: '2026-01-02T03:04:05Z', lastLoginAt: null };
 
   beforeEach(async () => {
     const authService = jasmine.createSpyObj<AuthService>(

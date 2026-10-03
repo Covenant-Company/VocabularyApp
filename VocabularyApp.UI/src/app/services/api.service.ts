@@ -30,13 +30,13 @@ export class ApiService {
     });
   }
 
-  post<T>(endpoint: string, data: any): Observable<ApiResponse<T>> {
+  post<T, TRequest = unknown>(endpoint: string, data: TRequest): Observable<ApiResponse<T>> {
     return this.http.post<ApiResponse<T>>(`${this.API_URL}${endpoint}`, data, {
       headers: this.getAuthHeaders()
     });
   }
 
-  put<T>(endpoint: string, data: any): Observable<ApiResponse<T>> {
+  put<T, TRequest = unknown>(endpoint: string, data: TRequest): Observable<ApiResponse<T>> {
     return this.http.put<ApiResponse<T>>(`${this.API_URL}${endpoint}`, data, {
       headers: this.getAuthHeaders()
     });

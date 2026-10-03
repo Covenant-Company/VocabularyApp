@@ -1,3 +1,5 @@
+using VocabularyApp.WebApi.Models;
+using VocabularyApp.WebApi.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
@@ -25,7 +27,12 @@ namespace VocabularyApp.WebApi.Controllers
     /// Start a new quiz session from the user's vocabulary
     /// POST: /api/quiz/start
     /// </summary>
+    /// <remarks>Bearer required. Expiring process-local session; no answer key. Validation/quiz_unavailable 400; invalid_token 401; internal_error 500.</remarks>
     [HttpPost("start")]
+    [ProducesResponseType(typeof(SuccessResponse<QuizStartResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<IActionResult> StartQuiz([FromBody] StartQuizRequestDto request)
     {
       try
@@ -33,22 +40,23 @@ namespace VocabularyApp.WebApi.Controllers
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
         {
-          return Unauthorized(new { success = false, error = "Invalid token" });
+          return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
         }
 
         var quizRequest = request ?? new StartQuizRequestDto();
         var result = await _quizService.StartQuizAsync(userId, quizRequest);
         if (!result.IsSuccess)
         {
-          return BadRequest(new { success = false, error = result.Message ?? "Failed to start quiz." });
+          return ApiErrorResults.FromFailure(HttpContext, result);
         }
 
-        return Ok(new { success = true, data = result.Data });
+        if (result.Data is null) return ApiErrorResults.Internal(HttpContext);
+        return Ok(new SuccessResponse<QuizStartResponseDto> { Data = result.Data });
       }
       catch (Exception ex)
       {
         _logger.LogError(ex, "Error starting quiz");
-        return StatusCode(500, new { success = false, error = "Internal server error" });
+        return ApiErrorResults.Internal(HttpContext);
       }
     }
 
@@ -56,12 +64,19 @@ namespace VocabularyApp.WebApi.Controllers
     /// Submit quiz answers for scoring
     /// POST: /api/quiz/submit
     /// </summary>
+    /// <remarks>Bearer required. selectedOptionId presence required; zero valid. Omitted/empty answers count as unanswered. Invalid answers are safe 400. Unavailable session 404; concurrent/recognized persisted duplicate submission or changed vocabulary 409; internal_error 500. Removed sessions replay as 404.</remarks>
     [HttpPost("submit")]
+    [ProducesResponseType(typeof(SuccessResponse<QuizSubmitResponseDto>), 200)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 404)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 409)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<IActionResult> SubmitQuiz([FromBody] QuizSubmitRequestDto request)
     {
       if (request == null)
       {
-        return BadRequest(new { success = false, error = "Request body is required." });
+        return ApiErrorResults.Create(HttpContext, ServiceFailureType.Validation, "invalid_request");
       }
 
       try
@@ -69,21 +84,22 @@ namespace VocabularyApp.WebApi.Controllers
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
         {
-          return Unauthorized(new { success = false, error = "Invalid token" });
+          return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
         }
 
         var result = await _quizService.SubmitQuizAsync(userId, request);
         if (!result.IsSuccess)
         {
-          return BadRequest(new { success = false, error = result.Message ?? "Failed to submit quiz." });
+          return ApiErrorResults.FromFailure(HttpContext, result);
         }
 
-        return Ok(new { success = true, data = result.Data });
+        if (result.Data is null) return ApiErrorResults.Internal(HttpContext);
+        return Ok(new SuccessResponse<QuizSubmitResponseDto> { Data = result.Data });
       }
       catch (Exception ex)
       {
         _logger.LogError(ex, "Error submitting quiz");
-        return StatusCode(500, new { success = false, error = "Internal server error" });
+        return ApiErrorResults.Internal(HttpContext);
       }
     }
 
@@ -91,7 +107,12 @@ namespace VocabularyApp.WebApi.Controllers
     /// Get recent quiz history for the current user
     /// GET: /api/quiz/history?take=5
     /// </summary>
+    /// <remarks>Bearer required. Items have no sessionId. take defaults/nonpositive normalizes to 5; maximum 20. Integer-binding validation 400; invalid_token 401; internal_error 500.</remarks>
     [HttpGet("history")]
+    [ProducesResponseType(typeof(SuccessResponse<QuizHistoryResponseDto>), 200)]
+    [ProducesResponseType(typeof(ValidationProblemDetails), 400)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 401)]
+    [ProducesResponseType(typeof(ApiErrorResponse), 500)]
     public async Task<IActionResult> GetQuizHistory([FromQuery] int take = 5)
     {
       try
@@ -99,21 +120,22 @@ namespace VocabularyApp.WebApi.Controllers
         var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         if (userIdClaim == null || !int.TryParse(userIdClaim, out var userId))
         {
-          return Unauthorized(new { success = false, error = "Invalid token" });
+          return ApiErrorResults.Create(HttpContext, ServiceFailureType.Unauthorized, "invalid_token");
         }
 
         var result = await _quizService.GetRecentQuizHistoryAsync(userId, take);
         if (!result.IsSuccess)
         {
-          return BadRequest(new { success = false, error = result.Message ?? "Failed to fetch quiz history." });
+          return ApiErrorResults.FromFailure(HttpContext, result);
         }
 
-        return Ok(new { success = true, data = result.Data });
+        if (result.Data is null) return ApiErrorResults.Internal(HttpContext);
+        return Ok(new SuccessResponse<QuizHistoryResponseDto> { Data = result.Data });
       }
       catch (Exception ex)
       {
         _logger.LogError(ex, "Error retrieving quiz history");
-        return StatusCode(500, new { success = false, error = "Internal server error" });
+        return ApiErrorResults.Internal(HttpContext);
       }
     }
   }

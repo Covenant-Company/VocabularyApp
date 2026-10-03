@@ -1,6 +1,95 @@
-@VocabularyApp.WebApi_HostAddress = http://localhost:5190
+# R7 contract examples — documentation only; not executed in Phase 7.
+# Execution belongs to Phase 8 in an isolated local environment. Replace placeholders deliberately.
+# Never store production tokens or secrets here.
+@baseUrl = https://localhost:REPLACE_WITH_CONFIGURED_HTTPS_PORT
+@token = REPLACE_WITH_LOCAL_TEST_TOKEN
+@userWordId = REPLACE_WITH_OWNED_USER_WORD_ID
+@preferredDefinitionId = REPLACE_WITH_CANONICAL_DEFINITION_ID
+@sessionId = REPLACE_WITH_SESSION_ID_FROM_START
+@questionId = REPLACE_WITH_QUESTION_ID_FROM_START
 
-GET {{VocabularyApp.WebApi_HostAddress}}/weatherforecast/
-Accept: application/json
+### E01 Register — anonymous; 200 nested ApiResult<AuthResponse>; VE/duplicate AE 400
+POST {{baseUrl}}/api/users/register
+Content-Type: application/json
 
-###
+{"username":"REPLACE_WITH_UNIQUE_LOCAL_USERNAME","email":"local-test@example.invalid","password":"REPLACE_WITH_LOCAL_TEST_PASSWORD"}
+
+### E02 Login — anonymous; 200 nested auth; VE 400, AE 401/409/500
+POST {{baseUrl}}/api/users/login
+Content-Type: application/json
+
+{"username":"REPLACE_WITH_UNIQUE_LOCAL_USERNAME","password":"REPLACE_WITH_LOCAL_TEST_PASSWORD"}
+
+### E03 Profile — 200 ApiResult<UserDto>
+GET {{baseUrl}}/api/users/profile
+Authorization: Bearer {{token}}
+
+### E04 Change password — 200 non-generic ApiResult with null data/error
+POST {{baseUrl}}/api/users/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"currentPassword":"REPLACE_WITH_LOCAL_TEST_PASSWORD","newPassword":"REPLACE_WITH_NEW_LOCAL_TEST_PASSWORD"}
+
+### E05 Validate token — returns UserDto without issuing another token
+GET {{baseUrl}}/api/users/validate-token
+Authorization: Bearer {{token}}
+
+### E06 Lookup — Bearer required by fallback; 404 miss / 503 provider unavailable
+GET {{baseUrl}}/api/words/lookup/hello
+Authorization: Bearer {{token}}
+
+### E07 Add canonical word after lookup — duplicate remains 200
+# Optional preferredWordDefinitionId must belong to canonical word on a new add.
+# Legacy definition/example/pronunciation remain accepted but ignored; POS is a selection fallback.
+POST {{baseUrl}}/api/words/vocabulary/add
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"word":"hello"}
+
+### E08 Vocabulary — complete paginated typed response
+GET {{baseUrl}}/api/words/vocabulary?page=1&pageSize=20&term=hello&startsWithLetter=h
+Authorization: Bearer {{token}}
+
+### E09 Search — absent/blank term gives full empty response; at most 5 items
+GET {{baseUrl}}/api/words/vocabulary/search?term=hello
+Authorization: Bearer {{token}}
+
+### E10 Favorite — explicit false valid; omitted isFavorite gives validation_failed 400
+PUT {{baseUrl}}/api/words/vocabulary/{{userWordId}}/favorite
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"isFavorite":false}
+
+### E11 Preferred definition — same row; missing/nonowned concealed as 404
+PUT {{baseUrl}}/api/words/vocabulary/{{userWordId}}/preferred-definition
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"preferredWordDefinitionId":{{preferredDefinitionId}}}
+
+### E12 Start quiz — process-local 30-minute session; no answer key
+POST {{baseUrl}}/api/quiz/start
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"questionCount":10,"mode":"mixed"}
+
+### E13 Submit — selectedOptionId explicitly present; 0 valid; no automatic retry
+# Omitted answers/[] is valid and scores all questions unanswered.
+# Unknown/nonowned/expired/removed: 404; concurrency/recognized persisted duplicate: 409.
+POST {{baseUrl}}/api/quiz/submit
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{"sessionId":"{{sessionId}}","answers":[{"questionId":"{{questionId}}","selectedOptionId":0}]}
+
+### E14 History — no sessionId on items; take capped at 20
+GET {{baseUrl}}/api/quiz/history?take=5
+Authorization: Bearer {{token}}
+
+# Contracts: ../Docs/Updates/R7-api-contract-reference.md.
+# AE = six-field application/json. VE = extended application/problem+json.
+# Framework Bearer 401 may have an empty body.

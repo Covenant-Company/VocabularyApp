@@ -69,9 +69,4 @@ export interface VocabularyResponse {
   totalPages: number;
 }
 
-export interface AddToVocabularyResult {
-  userWordId: number;
-  wordId: number;
-  alreadyExisted: boolean;
-  message: string;
-}
+export type { AddToVocabularyResult } from './word-api.model';

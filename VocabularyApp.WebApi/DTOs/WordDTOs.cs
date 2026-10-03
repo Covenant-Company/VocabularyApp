@@ -20,11 +20,6 @@ public class WordDefinitionDto
     public int DisplayOrder { get; set; }
 }
 
-public class WordLookupRequest
-{
-    public string Word { get; set; } = string.Empty;
-}
-
 public class WordLookupResponse
 {
     public bool Success { get; set; }

@@ -20,6 +20,7 @@ public class UserVocabularyItemDto
 
 public class UpdateFavoriteRequestDto
 {
+  [System.Text.Json.Serialization.JsonRequired]
   public bool IsFavorite { get; set; }
 }
 
@@ -43,4 +44,18 @@ public class AddToVocabularyResultDto
   public int WordId { get; set; }
   public bool AlreadyExisted { get; set; }
   public string Message { get; set; } = string.Empty;
+}
+
+public class FavoriteUpdateResponseDto
+{
+  public string Message { get; set; } = string.Empty;
+  public int UserWordId { get; set; }
+  public bool IsFavorite { get; set; }
+}
+
+public class PreferredDefinitionUpdateResponseDto
+{
+  public string Message { get; set; } = string.Empty;
+  public int UserWordId { get; set; }
+  public int PreferredWordDefinitionId { get; set; }
 }

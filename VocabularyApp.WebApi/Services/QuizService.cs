@@ -60,7 +60,7 @@ namespace VocabularyApp.WebApi.Services
 
         if (uniqueEntries.Count < 4)
         {
-          return ServiceResult<QuizStartResponseDto>.Failure("You need at least 4 saved words with definitions to start a quiz.");
+          return ServiceResult<QuizStartResponseDto>.Failure("You need at least 4 saved words with definitions to start a quiz.", ServiceFailureType.Validation, "quiz_unavailable");
         }
 
         var selectedWords = Shuffle(uniqueEntries).Take(Math.Min(questionCount, uniqueEntries.Count)).ToList();
@@ -103,7 +103,7 @@ namespace VocabularyApp.WebApi.Services
 
         if (questions.Count == 0)
         {
-          return ServiceResult<QuizStartResponseDto>.Failure("Unable to generate quiz questions from your current vocabulary.");
+          return ServiceResult<QuizStartResponseDto>.Failure("Unable to generate quiz questions from your current vocabulary.", ServiceFailureType.Validation, "quiz_unavailable");
         }
 
         var sessionId = Guid.NewGuid();
@@ -138,52 +138,54 @@ namespace VocabularyApp.WebApi.Services
       catch (Exception ex)
       {
         _logger.LogError(ex, "Error starting quiz for user {UserId}", userId);
-        return ServiceResult<QuizStartResponseDto>.Failure("Failed to start quiz.");
+        return ServiceResult<QuizStartResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
       }
     }
 
     public async Task<ServiceResult<QuizSubmitResponseDto>> SubmitQuizAsync(int userId, QuizSubmitRequestDto request)
     {
+      // Validate the entire collection before session locking, answer projection or scoring.
+      // Missing Answers retains its initialized empty list: unanswered questions are incorrect.
+      if (request is null || request.Answers is null || request.Answers.Any(answer => answer is null))
+      {
+        return ServiceResult<QuizSubmitResponseDto>.Failure("The quiz answers are invalid.", ServiceFailureType.Validation, "invalid_quiz_answers");
+      }
+
       if (request.SessionId == Guid.Empty)
       {
-        return ServiceResult<QuizSubmitResponseDto>.Failure("SessionId is required.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("SessionId is required.", ServiceFailureType.Validation, "invalid_request");
       }
 
       if (!QuizSessions.TryGetValue(request.SessionId, out var session))
       {
-        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session not found or expired.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session unavailable.", ServiceFailureType.NotFound, "quiz_session_unavailable");
       }
 
       if (session.UserId != userId)
       {
-        return ServiceResult<QuizSubmitResponseDto>.Failure("You are not authorized for this quiz session.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session unavailable.", ServiceFailureType.NotFound, "quiz_session_unavailable");
       }
 
       if (session.ExpiresAtUtc < DateTime.UtcNow)
       {
         QuizSessions.TryRemove(request.SessionId, out _);
-        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session has expired. Please start a new quiz.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz session unavailable.", ServiceFailureType.NotFound, "quiz_session_unavailable");
       }
 
       if (!session.TryBeginSubmission())
       {
-        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz submission is already in progress.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz submission is already in progress.", ServiceFailureType.Conflict, "quiz_submission_conflict");
       }
 
       var submissionCompleted = false;
       try
       {
-        if (request.Answers == null)
-        {
-          return ServiceResult<QuizSubmitResponseDto>.Failure("Answers are required.");
-        }
-
         var duplicateQuestionId = request.Answers
             .GroupBy(answer => answer.QuestionId)
             .FirstOrDefault(group => group.Count() > 1);
         if (duplicateQuestionId != null)
         {
-          return ServiceResult<QuizSubmitResponseDto>.Failure("Each quiz question may only be answered once.");
+          return ServiceResult<QuizSubmitResponseDto>.Failure("Each quiz question may only be answered once.", ServiceFailureType.Validation, "invalid_quiz_answers");
         }
 
         var sessionQuestionLookup = session.Questions
@@ -193,12 +195,12 @@ namespace VocabularyApp.WebApi.Services
         {
           if (!sessionQuestionLookup.TryGetValue(answer.QuestionId, out var question))
           {
-            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer does not belong to this quiz session.");
+            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer does not belong to this quiz session.", ServiceFailureType.Validation, "invalid_quiz_answers");
           }
 
           if (!question.Options.Any(option => option.OptionId == answer.SelectedOptionId))
           {
-            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer contains an invalid option.");
+            return ServiceResult<QuizSubmitResponseDto>.Failure("An answer contains an invalid option.", ServiceFailureType.Validation, "invalid_quiz_answers");
           }
         }
 
@@ -216,7 +218,7 @@ namespace VocabularyApp.WebApi.Services
         if (ownedUserWordIds.Count != requiredUserWordIds.Count ||
             requiredUserWordIds.Any(id => !ownedUserWordIds.Contains(id)))
         {
-          return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz vocabulary is no longer available.");
+          return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz vocabulary is no longer available.", ServiceFailureType.Conflict, "quiz_vocabulary_changed");
         }
 
         var answerLookup = request.Answers
@@ -294,7 +296,7 @@ namespace VocabularyApp.WebApi.Services
                 .ToListAsync();
             if (transactionalUserWords.Count != requiredUserWordIds.Count)
             {
-              throw new InvalidOperationException("Quiz vocabulary changed before persistence.");
+              throw new QuizVocabularyChangedException();
             }
 
             var transactionalUserWordsById = transactionalUserWords
@@ -333,6 +335,11 @@ namespace VocabularyApp.WebApi.Services
         submissionCompleted = true;
         return ServiceResult<QuizSubmitResponseDto>.Success(response);
       }
+      catch (QuizVocabularyChangedException)
+      {
+        _db.ChangeTracker.Clear();
+        return ServiceResult<QuizSubmitResponseDto>.Failure("Quiz vocabulary is no longer available.", ServiceFailureType.Conflict, "quiz_vocabulary_changed");
+      }
       catch (DbUpdateException ex) when (IsQuizSubmissionDuplicate(ex))
       {
         _db.ChangeTracker.Clear();
@@ -342,13 +349,13 @@ namespace VocabularyApp.WebApi.Services
             "Duplicate quiz submission rejected for user {UserId} and session {QuizSessionId}",
             userId,
             request.SessionId);
-        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz has already been submitted.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("This quiz has already been submitted.", ServiceFailureType.Conflict, "quiz_submission_conflict");
       }
       catch (Exception ex)
       {
         _db.ChangeTracker.Clear();
         _logger.LogError(ex, "Error submitting quiz for user {UserId}", userId);
-        return ServiceResult<QuizSubmitResponseDto>.Failure("Failed to submit quiz.");
+        return ServiceResult<QuizSubmitResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
       }
       finally
       {
@@ -389,7 +396,7 @@ namespace VocabularyApp.WebApi.Services
       catch (Exception ex)
       {
         _logger.LogError(ex, "Error retrieving quiz history for user {UserId}", userId);
-        return ServiceResult<QuizHistoryResponseDto>.Failure("Failed to retrieve quiz history.");
+        return ServiceResult<QuizHistoryResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
       }
     }
 
@@ -472,6 +479,8 @@ namespace VocabularyApp.WebApi.Services
     }
 
     internal static void ClearQuizSessionsForTesting() => QuizSessions.Clear();
+
+    private sealed class QuizVocabularyChangedException : Exception { }
 
     private class QuizVocabularyEntry
     {
