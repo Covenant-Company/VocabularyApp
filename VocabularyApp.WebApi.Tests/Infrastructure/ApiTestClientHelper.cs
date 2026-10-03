@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using VocabularyApp.WebApi.Controllers;
 using VocabularyApp.WebApi.DTOs;
 
 namespace VocabularyApp.WebApi.Tests.Infrastructure;

@@ -5,7 +5,10 @@ namespace VocabularyApp.WebApi.Models
     None,
     Validation,
     NotFound,
-    ServiceUnavailable
+    ServiceUnavailable,
+    InternalError,
+    Unauthorized,
+    Conflict
   }
 
   public class ServiceResult<T>
@@ -14,6 +17,7 @@ namespace VocabularyApp.WebApi.Models
     public string? Message { get; set; }
     public T? Data { get; set; }
     public ServiceFailureType FailureType { get; set; }
+    public string? Code { get; set; }
 
     public static ServiceResult<T> Success(T data, string? message = null)
     {
@@ -22,13 +26,15 @@ namespace VocabularyApp.WebApi.Models
 
     public static ServiceResult<T> Failure(
       string message,
-      ServiceFailureType failureType = ServiceFailureType.Validation)
+      ServiceFailureType failureType = ServiceFailureType.Validation,
+      string? code = null)
     {
       return new ServiceResult<T>
       {
         IsSuccess = false,
         Message = message,
-        FailureType = failureType
+        FailureType = failureType,
+        Code = code
       };
     }
   }

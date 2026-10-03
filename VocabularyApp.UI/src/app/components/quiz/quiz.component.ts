@@ -3,6 +3,7 @@ import { Component } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../services/api.service';
+import { normalizeApiError } from '../../services/api-error';
 import {
   QuizHistoryItem,
   QuizHistoryResponse,
@@ -11,7 +12,8 @@ import {
   QuizQuestion,
   QuizStartResponse,
   QuizSubmitResponse,
-  StartQuizRequest
+  StartQuizRequest,
+  QuizSubmitRequest
 } from '../../models/quiz.model';
 
 @Component({
@@ -27,6 +29,7 @@ export class QuizComponent {
 
   isLoading = false;
   isSubmitting = false;
+  quizRecoveryRequiresRestart = false;
   errorMessage = '';
   quizHistory: QuizHistoryItem[] = [];
   quizHistoryLoading = false;
@@ -66,7 +69,9 @@ export class QuizComponent {
   }
 
   startQuiz(): void {
+    if (this.isLoading || this.isSubmitting) return;
     this.errorMessage = '';
+    this.quizRecoveryRequiresRestart = false;
     this.quizResult = null;
     this.quizSession = null;
     this.currentQuestionIndex = 0;
@@ -79,30 +84,31 @@ export class QuizComponent {
     };
 
     this.isLoading = true;
-    this.apiService.post<QuizStartResponse>('/quiz/start', payload).subscribe({
+    this.apiService.post<QuizStartResponse, StartQuizRequest>('/quiz/start', payload).subscribe({
       next: response => {
-        if (response.success && response.data) {
+        if (response?.success && response.data && typeof response.data.sessionId === 'string' && Array.isArray(response.data.questions) && response.data.questions.length > 0) {
           this.quizSession = response.data;
           this.syncSelectedAnswer();
         } else {
-          this.errorMessage = response.message || 'Unable to start quiz.';
+          this.errorMessage = 'Unable to start quiz.';
         }
 
         this.isLoading = false;
       },
       error: error => {
-        this.errorMessage = error?.error?.error || error?.error?.errorMessage || 'Unable to start quiz.';
+        this.errorMessage = normalizeApiError(error, 'quiz-start', 'Unable to start quiz.').message;
         this.isLoading = false;
       }
     });
   }
 
   selectOption(optionId: number): void {
+    if (this.isSubmitting || this.quizResult) return;
     this.selectedOptionId = optionId;
   }
 
   previousQuestion(): void {
-    if (!this.quizSession || this.currentQuestionIndex === 0) {
+    if (!this.quizSession || this.currentQuestionIndex === 0 || this.isSubmitting || this.quizResult) {
       return;
     }
 
@@ -112,7 +118,7 @@ export class QuizComponent {
   }
 
   nextQuestion(): void {
-    if (!this.quizSession || !this.currentQuestion) {
+    if (!this.quizSession || !this.currentQuestion || this.isSubmitting || this.quizResult || this.quizRecoveryRequiresRestart) {
       return;
     }
 
@@ -163,35 +169,39 @@ export class QuizComponent {
   }
 
   private submitQuiz(): void {
-    if (!this.quizSession) {
+    if (!this.quizSession || this.isSubmitting || this.quizResult || this.quizRecoveryRequiresRestart) {
       return;
     }
 
+    this.errorMessage = '';
     this.persistCurrentAnswer();
 
     const answers: QuizAnswerSubmission[] = this.quizSession.questions
-      .filter(question => this.selectedAnswers.has(question.questionId))
-      .map(question => ({
-        questionId: question.questionId,
-        selectedOptionId: this.selectedAnswers.get(question.questionId) as number
-      }));
+      .flatMap(question => {
+        const selectedOptionId = this.selectedAnswers.get(question.questionId);
+        return selectedOptionId === undefined ? [] : [{ questionId: question.questionId, selectedOptionId }];
+      });
 
     this.isSubmitting = true;
-    this.apiService.post<QuizSubmitResponse>('/quiz/submit', {
+    this.apiService.post<QuizSubmitResponse, QuizSubmitRequest>('/quiz/submit', {
       sessionId: this.quizSession.sessionId,
       answers
     }).subscribe({
       next: response => {
-        if (response.success && response.data) {
+        if (response?.success && response.data && Array.isArray(response.data.questionResults)
+          && Number.isFinite(response.data.totalQuestions) && Number.isFinite(response.data.correctAnswers) && Number.isFinite(response.data.scorePercentage)) {
           this.quizResult = response.data;
         } else {
-          this.errorMessage = response.message || 'Unable to submit quiz.';
+          this.errorMessage = 'Unable to submit quiz.';
         }
 
         this.isSubmitting = false;
       },
       error: error => {
-        this.errorMessage = error?.error?.error || error?.error?.errorMessage || 'Unable to submit quiz.';
+        const failure = normalizeApiError(error, 'quiz-submit', 'Unable to submit quiz.');
+        this.errorMessage = failure.message;
+        this.quizRecoveryRequiresRestart = error?.status === 404
+          || failure.code === 'quiz_session_unavailable' || failure.code === 'quiz_vocabulary_changed';
         this.isSubmitting = false;
       }
     });
@@ -203,16 +213,16 @@ export class QuizComponent {
 
     this.apiService.get<QuizHistoryResponse>('/quiz/history?take=5').subscribe({
       next: response => {
-        if (response.success && response.data) {
-          this.quizHistory = response.data.items || [];
+        if (response?.success && response.data && Array.isArray(response.data.items)) {
+          this.quizHistory = response.data.items;
         } else {
-          this.quizHistoryError = response.message || 'Unable to load quiz history.';
+          this.quizHistoryError = 'Unable to load quiz history.';
         }
 
         this.quizHistoryLoading = false;
       },
       error: error => {
-        this.quizHistoryError = error?.error?.error || error?.error?.errorMessage || 'Unable to load quiz history.';
+        this.quizHistoryError = normalizeApiError(error, 'quiz-history', 'Unable to load quiz history.').message;
         this.quizHistoryLoading = false;
       }
     });

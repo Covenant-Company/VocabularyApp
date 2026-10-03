@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using VocabularyApp.WebApi.DTOs;
 
 namespace VocabularyApp.WebApi.Services;
@@ -7,12 +8,12 @@ public interface IUserService
     /// <summary>
     /// Creates a new user account with hashed password
     /// </summary>
-    Task<AuthResponse> CreateUserAsync(CreateUserRequest request);
+    Task<ServiceResult<AuthResponse>> CreateUserAsync(CreateUserRequest request);
     
     /// <summary>
     /// Authenticates user credentials and returns JWT token
     /// </summary>
-    Task<AuthResponse> LoginAsync(LoginRequest request);
+    Task<ServiceResult<AuthResponse>> LoginAsync(LoginRequest request);
     
     /// <summary>
     /// Gets user information by ID
@@ -32,5 +33,5 @@ public interface IUserService
     /// <summary>
     /// Changes user password (requires current password verification)
     /// </summary>
-    Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
+    Task<ServiceResult<bool>> ChangePasswordAsync(int userId, string currentPassword, string newPassword);
 }

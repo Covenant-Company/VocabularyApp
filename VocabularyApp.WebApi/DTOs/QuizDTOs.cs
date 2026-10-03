@@ -32,6 +32,7 @@ public class QuizStartResponseDto
 public class QuizAnswerSubmissionDto
 {
   public Guid QuestionId { get; set; }
+  [System.Text.Json.Serialization.JsonRequired]
   public int SelectedOptionId { get; set; }
 }
 

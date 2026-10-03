@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using Microsoft.EntityFrameworkCore;
 using VocabularyApp.Data;
 using VocabularyApp.Data.Models;
@@ -26,7 +27,7 @@ public class UserService : IUserService
         _logger = logger;
     }
 
-    public async Task<AuthResponse> CreateUserAsync(CreateUserRequest request)
+    public async Task<ServiceResult<AuthResponse>> CreateUserAsync(CreateUserRequest request)
     {
         try
         {
@@ -36,11 +37,7 @@ public class UserService : IUserService
             
             if (existingUser != null)
             {
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Username is already taken"
-                };
+                return ServiceResult<AuthResponse>.Failure("Username is already taken", ServiceFailureType.Validation, "username_taken");
             }
 
             // Check if email already exists
@@ -49,11 +46,7 @@ public class UserService : IUserService
             
             if (existingEmail != null)
             {
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Email is already registered"
-                };
+                return ServiceResult<AuthResponse>.Failure("Email is already registered", ServiceFailureType.Validation, "email_taken");
             }
 
             // Create new user
@@ -74,25 +67,21 @@ public class UserService : IUserService
             var userDto = MapUserToDto(user);
             var token = _jwtHelper.GenerateToken(userDto);
 
-            return new AuthResponse
+            return ServiceResult<AuthResponse>.Success(new AuthResponse
             {
                 Success = true,
                 User = userDto,
                 Token = token
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error creating user: {Username}", request.Username);
-            return new AuthResponse
-            {
-                Success = false,
-                ErrorMessage = ex.Message
-            };
+            return ServiceResult<AuthResponse>.Failure(ApiErrorResults.InternalMessage, ServiceFailureType.InternalError, "internal_error");
         }
     }
 
-    public async Task<AuthResponse> LoginAsync(LoginRequest request)
+    public async Task<ServiceResult<AuthResponse>> LoginAsync(LoginRequest request)
     {
         try
         {
@@ -103,11 +92,7 @@ public class UserService : IUserService
             if (user == null)
             {
                 _logger.LogWarning("Login attempt with non-existent username: {Username}", request.Username);
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Invalid username or password"
-                };
+                return ServiceResult<AuthResponse>.Failure("Invalid username or password", ServiceFailureType.Unauthorized, "invalid_credentials");
             }
 
             var verification = _passwordService.Verify(user, user.PasswordHash, request.Password);
@@ -115,11 +100,7 @@ public class UserService : IUserService
                 or PasswordVerificationStatus.MalformedOrUnknown)
             {
                 _logger.LogWarning("Invalid password attempt for user: {Username}", request.Username);
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Invalid username or password"
-                };
+                return ServiceResult<AuthResponse>.Failure("Invalid username or password", ServiceFailureType.Unauthorized, "invalid_credentials");
             }
 
             var requiresCredentialReplacement = verification.RequiresReplacement;
@@ -135,11 +116,7 @@ public class UserService : IUserService
                         _logger.LogError(
                             "Required password replacement was unavailable for user: {UserId}",
                             user.Id);
-                        return new AuthResponse
-                        {
-                            Success = false,
-                            ErrorMessage = "An error occurred during login"
-                        };
+                        return ServiceResult<AuthResponse>.Failure(ApiErrorResults.InternalMessage, ServiceFailureType.InternalError, "internal_error");
                     }
 
                     user.PasswordHash = verification.ReplacementHash;
@@ -160,11 +137,7 @@ public class UserService : IUserService
                 _logger.LogWarning(
                     "Login rejected because credentials changed concurrently for user: {UserId}",
                     user.Id);
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "An error occurred during login"
-                };
+                return ServiceResult<AuthResponse>.Failure("Credentials changed. Please sign in again.", ServiceFailureType.Conflict, "credentials_changed");
             }
             catch (Exception ex) when (!requiresCredentialReplacement)
             {
@@ -173,11 +146,7 @@ public class UserService : IUserService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Required credential update failed for user: {UserId}", user.Id);
-                return new AuthResponse
-                {
-                    Success = false,
-                    ErrorMessage = "An error occurred during login"
-                };
+                return ServiceResult<AuthResponse>.Failure(ApiErrorResults.InternalMessage, ServiceFailureType.InternalError, "internal_error");
             }
 
             _logger.LogInformation("Successful login for user: {Username}", user.Username);
@@ -186,21 +155,17 @@ public class UserService : IUserService
             var userDto = MapUserToDto(user);
             var token = _jwtHelper.GenerateToken(userDto);
 
-            return new AuthResponse
+            return ServiceResult<AuthResponse>.Success(new AuthResponse
             {
                 Success = true,
                 User = userDto,
                 Token = token
-            };
+            });
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during login for username: {Username}", request.Username);
-            return new AuthResponse
-            {
-                Success = false,
-                ErrorMessage = "An error occurred during login"
-            };
+            return ServiceResult<AuthResponse>.Failure(ApiErrorResults.InternalMessage, ServiceFailureType.InternalError, "internal_error");
         }
     }
 
@@ -237,13 +202,12 @@ public class UserService : IUserService
         }
     }
 
-    public async Task<bool> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
+    public async Task<ServiceResult<bool>> ChangePasswordAsync(int userId, string currentPassword, string newPassword)
     {
         try
         {
             var user = await _context.Users.FindAsync(userId);
-            if (user == null)
-                return false;
+            if (user == null) return ServiceResult<bool>.Failure("Your account is unavailable. Please sign in again.", ServiceFailureType.Unauthorized, "user_unavailable");
 
             // Verify current password in either supported stored format.
             var verification = _passwordService.Verify(user, user.PasswordHash, currentPassword);
@@ -252,7 +216,7 @@ public class UserService : IUserService
                 case PasswordVerificationStatus.Failed:
                 case PasswordVerificationStatus.MalformedOrUnknown:
                     _logger.LogWarning("Invalid current password provided for user: {UserId}", userId);
-                    return false;
+                    return ServiceResult<bool>.Failure("Current password is incorrect", ServiceFailureType.Unauthorized, "current_password_incorrect");
 
                 case PasswordVerificationStatus.Succeeded:
                 case PasswordVerificationStatus.SucceededRehashRequired:
@@ -271,19 +235,19 @@ public class UserService : IUserService
             await _context.SaveChangesAsync();
 
             _logger.LogInformation("Password changed successfully for user: {UserId}", userId);
-            return true;
+            return ServiceResult<bool>.Success(true);
         }
         catch (DbUpdateConcurrencyException)
         {
             _logger.LogWarning(
                 "Password change rejected because credentials changed concurrently for user: {UserId}",
                 userId);
-            return false;
+            return ServiceResult<bool>.Failure("Credentials changed. Please sign in again.", ServiceFailureType.Conflict, "credentials_changed");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error changing password for user: {UserId}", userId);
-            return false;
+            return ServiceResult<bool>.Failure(ApiErrorResults.InternalMessage, ServiceFailureType.InternalError, "internal_error");
         }
     }
 

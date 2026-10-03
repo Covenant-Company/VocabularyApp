@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
@@ -37,7 +38,7 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
             Password = password
         });
 
-        Assert.True(result.Success);
+        Assert.True(result.IsSuccess);
         AssertLogsExclude(logger, password);
     }
 
@@ -59,7 +60,7 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
             Password = password
         });
 
-        Assert.True(result.Success);
+        Assert.True(result.IsSuccess);
         AssertLogsExclude(logger, password, storedHash);
     }
 
@@ -82,8 +83,10 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
             Password = wrongPassword
         });
 
-        Assert.False(result.Success);
+        Assert.False(result.IsSuccess);
         AssertLogsExclude(logger, correctPassword, wrongPassword, storedHash);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("invalid_credentials", result.Code);
     }
 
     [Fact]
@@ -102,8 +105,9 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
         var result = await CreateUserService(context, logger)
             .ChangePasswordAsync(user.Id, currentPassword, newPassword);
 
-        Assert.True(result);
+        Assert.True(result.IsSuccess);
         AssertLogsExclude(logger, currentPassword, newPassword, storedHash);
+        Assert.True(result.Data);
     }
 
     [Fact]
@@ -122,8 +126,10 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
             Password = password
         });
 
-        Assert.False(result.Success);
+        Assert.False(result.IsSuccess);
         AssertLogsExclude(logger, malformedHash, password);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("invalid_credentials", result.Code);
     }
 
     [Fact]
@@ -147,9 +153,11 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
                 new PasswordService(controlledHasher, new LegacyPasswordVerifier()))
             .LoginAsync(new LoginRequest { Username = user.Username, Password = password });
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Data?.Token);
         Assert.Contains(logger.Entries, entry => entry.Message.Contains(user.Id.ToString()));
+        Assert.Equal(ServiceFailureType.InternalError, result.FailureType);
+        Assert.Equal("internal_error", result.Code);
         AssertLogsExclude(logger, password, storedHash, replacementHash);
     }
 
@@ -175,9 +183,11 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
                 new PasswordService(controlledHasher, new LegacyPasswordVerifier()))
             .LoginAsync(new LoginRequest { Username = user.Username, Password = password });
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Data?.Token);
         Assert.Contains(logger.Entries, entry => entry.Message.Contains(user.Id.ToString()));
+        Assert.Equal(ServiceFailureType.InternalError, result.FailureType);
+        Assert.Equal("internal_error", result.Code);
         AssertLogsExclude(logger, password, storedHash, replacementHash);
     }
 
@@ -210,12 +220,14 @@ public sealed class AuthenticationLoggingTests : IClassFixture<RelationalDatabas
                 new PasswordService(controlledHasher, new LegacyPasswordVerifier()))
             .LoginAsync(new LoginRequest { Username = user.Username, Password = password });
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Data?.Token);
         Assert.Contains(
             logger.Entries,
             entry => entry.Message.Contains("concurrently", StringComparison.OrdinalIgnoreCase)
                 && entry.Message.Contains(user.Id.ToString()));
+        Assert.Equal(ServiceFailureType.Conflict, result.FailureType);
+        Assert.Equal("credentials_changed", result.Code);
         AssertLogsExclude(logger, password, storedHash, replacementHash, newerHash);
     }
 

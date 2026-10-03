@@ -23,10 +23,10 @@ namespace VocabularyApp.WebApi.Services
             _logger = logger;
         }
 
-        public async Task<ServiceResult<object>> LookupWordAsync(string term, int? userId = null)
+        public async Task<ServiceResult<WordLookupResponse>> LookupWordAsync(string term, int? userId = null)
         {
             if (string.IsNullOrWhiteSpace(term))
-                return ServiceResult<object>.Failure("Word is required.");
+                return ServiceResult<WordLookupResponse>.Failure("Word is required.", ServiceFailureType.Validation, "invalid_request");
 
             var normalized = term.Trim();
             bool isInUserVocabulary = false;
@@ -57,7 +57,7 @@ namespace VocabularyApp.WebApi.Services
                         WasFoundInCache = true,
                         IsInUserVocabulary = isInUserVocabulary
                     };
-                    return ServiceResult<object>.Success(resp);
+                    return ServiceResult<WordLookupResponse>.Success(resp);
                 }
 
                 // 2) Fetch from external dictionary API and persist
@@ -68,9 +68,9 @@ namespace VocabularyApp.WebApi.Services
                     using var providerResponse = await _http.GetAsync(apiUrl);
                     if (providerResponse.StatusCode == HttpStatusCode.NotFound)
                     {
-                        return ServiceResult<object>.Failure(
+                        return ServiceResult<WordLookupResponse>.Failure(
                             "No definitions found.",
-                            ServiceFailureType.NotFound);
+                            ServiceFailureType.NotFound, "word_not_found");
                     }
 
                     if (!providerResponse.IsSuccessStatusCode)
@@ -86,11 +86,13 @@ namespace VocabularyApp.WebApi.Services
                         .ReadFromJsonAsync<WordsApiResponse>();
                 }
                 catch (Exception ex) when (ex is HttpRequestException
-                                           or TaskCanceledException
+                                           or OperationCanceledException
+                                           or IOException
                                            or JsonException
                                            or NotSupportedException)
                 {
-                    _logger.LogWarning(ex, "WordsAPI call failed for '{Word}'", normalized);
+                    // Exception messages can contain provider URLs, credentials or response text.
+                    _logger.LogWarning("WordsAPI call failed ({ExceptionType})", ex.GetType().Name);
                     return DictionaryUnavailable();
                 }
 
@@ -107,8 +109,19 @@ namespace VocabularyApp.WebApi.Services
                     return DictionaryUnavailable();
                 }
 
+                // Validate every entry before filtering content or tracking any canonical records.
+                // Omitted optional collections initialize empty; explicit null is malformed.
+                if (apiData.Results == null || apiData.Results.Count == 0
+                    || apiData.Pronunciation == null
+                    || apiData.Results.Any(result => result == null || result.Examples == null))
+                {
+                    _logger.LogWarning("WordsAPI returned invalid collection structure");
+                    return DictionaryUnavailable();
+                }
+
+                var results = apiData.Results.Select(result => result!).ToList();
                 var partsOfSpeech = await _db.PartsOfSpeech.ToListAsync();
-                var mappedDefinitions = apiData.Results
+                var mappedDefinitions = results
                     .Where(result => !string.IsNullOrWhiteSpace(result.Definition))
                     .Select(result => new
                     {
@@ -120,7 +133,7 @@ namespace VocabularyApp.WebApi.Services
                     .Where(mapped => mapped.PartOfSpeech != null)
                     .ToList();
 
-                foreach (var unknown in apiData.Results
+                foreach (var unknown in results
                     .Where(result => !string.IsNullOrWhiteSpace(result.Definition)
                                      && !partsOfSpeech.Any(pos => string.Equals(
                                          pos.Name,
@@ -128,9 +141,7 @@ namespace VocabularyApp.WebApi.Services
                                          StringComparison.OrdinalIgnoreCase))))
                 {
                     _logger.LogWarning(
-                        "Skipping WordsAPI definition for '{Word}' with unsupported part of speech '{PartOfSpeech}'",
-                        providerWord,
-                        unknown.PartOfSpeech);
+                        "Skipping WordsAPI definition with unsupported part of speech");
                 }
 
                 if (mappedDefinitions.Count == 0)
@@ -162,7 +173,7 @@ namespace VocabularyApp.WebApi.Services
                         Word = newWord,
                         PartOfSpeechId = mapped.PartOfSpeech!.Id,
                         Definition = mapped.Result.Definition!.Trim(),
-                        Example = mapped.Result.Examples
+                        Example = mapped.Result.Examples!
                             .FirstOrDefault(example => !string.IsNullOrWhiteSpace(example))?
                             .Trim(),
                         DisplayOrder = order++
@@ -194,24 +205,24 @@ namespace VocabularyApp.WebApi.Services
                     WasFoundInCache = false,
                     IsInUserVocabulary = isInUserVocabulary
                 };
-                return ServiceResult<object>.Success(response);
+                return ServiceResult<WordLookupResponse>.Success(response);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "LookupWordAsync failed for '{Word}'", term);
-                return ServiceResult<object>.Failure("Internal server error");
+                return ServiceResult<WordLookupResponse>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
-        private static ServiceResult<object> DictionaryUnavailable() =>
-            ServiceResult<object>.Failure(
+        private static ServiceResult<WordLookupResponse> DictionaryUnavailable() =>
+            ServiceResult<WordLookupResponse>.Failure(
                 "Dictionary service is temporarily unavailable. Please try again.",
-                ServiceFailureType.ServiceUnavailable);
+                ServiceFailureType.ServiceUnavailable, "dictionary_unavailable");
 
-        public async Task<ServiceResult<object>> AddToVocabularyAsync(int userId, AddWordRequest request)
+        public async Task<ServiceResult<AddToVocabularyResultDto>> AddToVocabularyAsync(int userId, AddWordRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Word))
-                return ServiceResult<object>.Failure("Word is required.");
+                return ServiceResult<AddToVocabularyResultDto>.Failure("Word is required.", ServiceFailureType.Validation, "invalid_request");
 
             try
             {
@@ -219,8 +230,7 @@ namespace VocabularyApp.WebApi.Services
                 var word = await _db.Words.FirstOrDefaultAsync(w => w.Text == request.Word);
                 if (word == null)
                 {
-                    return ServiceResult<object>.Failure(
-                        "Word is not available in the canonical dictionary. Look it up before adding it to your vocabulary.");
+                    return ServiceResult<AddToVocabularyResultDto>.Failure("Word is not available in the canonical dictionary. Look it up before adding it to your vocabulary.", ServiceFailureType.Validation, "canonical_word_required");
                 }
 
                 // Saved-word identity is UserId + WordId. A repeated add never changes
@@ -247,8 +257,7 @@ namespace VocabularyApp.WebApi.Services
 
                     if (requestedDefinition == null)
                     {
-                        return ServiceResult<object>.Failure(
-                            "Selected definition is not valid for this word.");
+                        return ServiceResult<AddToVocabularyResultDto>.Failure("Selected definition is not valid for this word.", ServiceFailureType.Validation, "invalid_preferred_definition");
                     }
 
                     preferredWordDefinitionId = requestedDefinition.Id;
@@ -294,7 +303,7 @@ namespace VocabularyApp.WebApi.Services
                     throw;
                 }
 
-                return ServiceResult<object>.Success(new AddToVocabularyResultDto
+                return ServiceResult<AddToVocabularyResultDto>.Success(new AddToVocabularyResultDto
                 {
                     UserWordId = userWord.Id,
                     WordId = word.Id,
@@ -305,17 +314,17 @@ namespace VocabularyApp.WebApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error adding word to vocabulary for user {UserId}: '{Word}'", userId, request.Word);
-                return ServiceResult<object>.Failure("Failed to add to vocabulary");
+                return ServiceResult<AddToVocabularyResultDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
-        public async Task<ServiceResult<object>> SetPreferredDefinitionAsync(int userId, int userWordId, int preferredWordDefinitionId)
+        public async Task<ServiceResult<PreferredDefinitionUpdateResponseDto>> SetPreferredDefinitionAsync(int userId, int userWordId, int preferredWordDefinitionId)
         {
             try
             {
                 if (preferredWordDefinitionId <= 0)
                 {
-                    return ServiceResult<object>.Failure("A valid preferred definition is required.");
+                    return ServiceResult<PreferredDefinitionUpdateResponseDto>.Failure("A valid preferred definition is required.", ServiceFailureType.Validation, "invalid_preferred_definition");
                 }
 
                 var userWord = await _db.UserWords
@@ -323,7 +332,7 @@ namespace VocabularyApp.WebApi.Services
 
                 if (userWord == null)
                 {
-                    return ServiceResult<object>.Failure("Word not found in your vocabulary.");
+                    return ServiceResult<PreferredDefinitionUpdateResponseDto>.Failure("Word not found in your vocabulary.", ServiceFailureType.NotFound, "vocabulary_not_found");
                 }
 
                 var selectedDefinition = await _db.WordDefinitions
@@ -339,7 +348,7 @@ namespace VocabularyApp.WebApi.Services
 
                 if (selectedDefinition == null)
                 {
-                    return ServiceResult<object>.Failure("Selected definition is not valid for this word.");
+                    return ServiceResult<PreferredDefinitionUpdateResponseDto>.Failure("Selected definition is not valid for this word.", ServiceFailureType.Validation, "invalid_preferred_definition");
                 }
 
                 // Preferred definition is the selected meaning; POS remains synchronized
@@ -348,21 +357,21 @@ namespace VocabularyApp.WebApi.Services
                 userWord.PreferredWordDefinitionId = preferredWordDefinitionId;
                 await _db.SaveChangesAsync();
 
-                return ServiceResult<object>.Success(new
+                return ServiceResult<PreferredDefinitionUpdateResponseDto>.Success(new PreferredDefinitionUpdateResponseDto
                 {
-                    message = "Preferred definition updated",
-                    userWordId,
-                    preferredWordDefinitionId
+                    Message = "Preferred definition updated",
+                    UserWordId = userWordId,
+                    PreferredWordDefinitionId = preferredWordDefinitionId
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating preferred definition for user {UserId}, userWord {UserWordId}", userId, userWordId);
-                return ServiceResult<object>.Failure("Failed to update preferred definition.");
+                return ServiceResult<PreferredDefinitionUpdateResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
-        public async Task<ServiceResult<object>> SetFavoriteAsync(int userId, int userWordId, bool isFavorite)
+        public async Task<ServiceResult<FavoriteUpdateResponseDto>> SetFavoriteAsync(int userId, int userWordId, bool isFavorite)
         {
             try
             {
@@ -371,23 +380,23 @@ namespace VocabularyApp.WebApi.Services
 
                 if (userWord == null)
                 {
-                    return ServiceResult<object>.Failure("Word not found in your vocabulary.");
+                    return ServiceResult<FavoriteUpdateResponseDto>.Failure("Word not found in your vocabulary.", ServiceFailureType.NotFound, "vocabulary_not_found");
                 }
 
                 userWord.IsFavorite = isFavorite;
                 await _db.SaveChangesAsync();
 
-                return ServiceResult<object>.Success(new
+                return ServiceResult<FavoriteUpdateResponseDto>.Success(new FavoriteUpdateResponseDto
                 {
-                    message = isFavorite ? "Word marked as favorite" : "Word removed from favorites",
-                    userWordId,
-                    isFavorite
+                    Message = isFavorite ? "Word marked as favorite" : "Word removed from favorites",
+                    UserWordId = userWordId,
+                    IsFavorite = isFavorite
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error updating favorite state for user {UserId}, userWord {UserWordId}", userId, userWordId);
-                return ServiceResult<object>.Failure("Failed to update favorite state.");
+                return ServiceResult<FavoriteUpdateResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
@@ -478,11 +487,11 @@ namespace VocabularyApp.WebApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error retrieving user vocabulary for userId {UserId}", userId);
-                return ServiceResult<UserVocabularyResponseDto>.Failure("Failed to retrieve vocabulary list");
+                return ServiceResult<UserVocabularyResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
-        public async Task<ServiceResult<UserVocabularyResponseDto>> SearchUserVocabularyAsync(int userId, string searchTerm, int maxResults = 5)
+        public async Task<ServiceResult<UserVocabularyResponseDto>> SearchUserVocabularyAsync(int userId, string? searchTerm, int maxResults = 5)
         {
             try
             {
@@ -560,7 +569,7 @@ namespace VocabularyApp.WebApi.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error searching user vocabulary for userId {UserId} with term '{SearchTerm}'", userId, searchTerm);
-                return ServiceResult<UserVocabularyResponseDto>.Failure("Failed to search vocabulary");
+                return ServiceResult<UserVocabularyResponseDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
@@ -618,8 +627,8 @@ namespace VocabularyApp.WebApi.Services
                 .FirstOrDefaultAsync();
         }
 
-        private static ServiceResult<object> ExistingVocabularyEntry(UserWord userWord) =>
-            ServiceResult<object>.Success(new AddToVocabularyResultDto
+        private static ServiceResult<AddToVocabularyResultDto> ExistingVocabularyEntry(UserWord userWord) =>
+            ServiceResult<AddToVocabularyResultDto>.Success(new AddToVocabularyResultDto
             {
                 UserWordId = userWord.Id,
                 WordId = userWord.WordId,

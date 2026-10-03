@@ -1,5 +1,5 @@
 
-namespace VocabularyApp.WebApi.Models
+namespace VocabularyApp.WebApi.DTOs
 {
   public class ApiResult
   {
@@ -29,9 +29,22 @@ namespace VocabularyApp.WebApi.Models
       };
     }
 
-    internal static object? ErrorResult(object value)
+  }
+
+  public class ApiResult<T>
+  {
+    public bool Success { get; set; }
+    public T? Data { get; set; }
+    public string? Error { get; set; }
+
+    public static ApiResult<T> SuccessResult(T data)
     {
-      throw new NotImplementedException();
+      return new ApiResult<T> { Success = true, Data = data };
+    }
+
+    public static ApiResult<T> ErrorResult(string error)
+    {
+      return new ApiResult<T> { Success = false, Error = error };
     }
   }
 }

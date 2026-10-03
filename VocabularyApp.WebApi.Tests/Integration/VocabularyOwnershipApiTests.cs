@@ -310,7 +310,8 @@ public sealed class VocabularyOwnershipApiTests
 
         using var response = await AddVocabularyAsync(user.Client, wordText, "Noun");
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        await ApiErrorContractAssert.InternalAsync(response, user.User.Token);
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.False(await context.UserWords.AnyAsync(
@@ -360,7 +361,9 @@ public sealed class VocabularyOwnershipApiTests
             new UpdateFavoriteRequestDto { IsFavorite = false });
 
         Assert.Equal(HttpStatusCode.OK, ownResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, attackResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, attackResponse.StatusCode);
+        await ApiErrorContractAssert.ApplicationAsync(attackResponse, HttpStatusCode.NotFound,
+            "vocabulary_not_found", "Word not found in your vocabulary.");
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.True((await context.UserWords.SingleAsync(item => item.Id == userWordA)).IsFavorite);
@@ -395,7 +398,9 @@ public sealed class VocabularyOwnershipApiTests
             });
 
         Assert.Equal(HttpStatusCode.OK, ownResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.BadRequest, attackResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, attackResponse.StatusCode);
+        await ApiErrorContractAssert.ApplicationAsync(attackResponse, HttpStatusCode.NotFound,
+            "vocabulary_not_found", "Word not found in your vocabulary.");
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Equal(
@@ -459,8 +464,12 @@ public sealed class VocabularyOwnershipApiTests
             $"/api/words/vocabulary/{userWordId}/preferred-definition",
             new UpdatePreferredDefinitionRequestDto { PreferredWordDefinitionId = 0 });
 
-        Assert.Equal(HttpStatusCode.BadRequest, missingFavorite.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, missingFavorite.StatusCode);
         Assert.Equal(HttpStatusCode.BadRequest, missingDefinition.StatusCode);
+        await ApiErrorContractAssert.ApplicationAsync(missingFavorite, HttpStatusCode.NotFound,
+            "vocabulary_not_found", "Word not found in your vocabulary.");
+        await ApiErrorContractAssert.ApplicationAsync(missingDefinition, HttpStatusCode.BadRequest,
+            "invalid_preferred_definition", "Selected definition is not valid for this word.");
         Assert.Equal(HttpStatusCode.BadRequest, invalidDefinition.StatusCode);
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();

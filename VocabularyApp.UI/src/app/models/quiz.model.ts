@@ -40,7 +40,7 @@ export interface QuizQuestionResult {
   questionType: string;
   prompt: string;
   correctAnswer: string;
-  selectedAnswer?: string;
+  selectedAnswer: string | null;
   isCorrect: boolean;
 }
 

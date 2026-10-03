@@ -8,7 +8,7 @@ A comprehensive vocabulary building application built with .NET 8.0 Web API back
 - **Database**: SQL Server LocalDB (VocabularyAppDb_Dev)
 - **Authentication**: JWT Bearer tokens with secure password hashing
 - **API Documentation**: Swagger/OpenAPI with JWT support
-- **External Integration**: Free Dictionary API (dictionaryapi.dev)
+- **External Integration**: Canonical database lookup with an external dictionary provider boundary.
 
 ## Project Structure
 ```
@@ -30,12 +30,12 @@ VocabularyApp/
 ### 🔐 User Management
 - **User Registration**: Secure account creation with ASP.NET Core adaptive password hashing
 - **User Authentication**: JWT-based login system with configurable token expiration
-- **Profile Management**: Update user profile information
+- **Profile Access**: Read authenticated profile; no profile-update endpoint exists.
 - **Password Security**: Adaptive password hashing for new and changed passwords, with temporary legacy verification and transparent login migration
 
 ### 📚 Word Management
-- **Word Search**: Look up words in the local database with fuzzy matching
-- **External Dictionary**: Integration with free Dictionary API for comprehensive definitions
+- **Word Lookup**: Canonical database-first lookup; vocabulary search is a separate authenticated action.
+- **External Dictionary**: Genuine misses are 404; unavailable/untrustworthy upstream data is 503. Provider details are not public contracts.
 - **Parts of Speech**: Proper categorization (Noun, Verb, Adjective, etc.)
 - **Sample Sentences**: Support for contextual word usage examples
 
@@ -59,16 +59,26 @@ VocabularyApp/
 
 ## API Endpoints
 
-### Authentication
-- `POST /api/users/register` - User registration
-- `POST /api/users/login` - User authentication
-- `GET /api/users/profile` - Get user profile (requires JWT)
-- `PUT /api/users/profile` - Update user profile (requires JWT)
+The current 14 actions are documented in the [R7 API contract reference](Updates/R7-api-contract-reference.md), including typed responses, nullable fields, validation media types, error codes and Angular consumers. R7 status: **IMPLEMENTED AND EXECUTION VERIFIED** locally. See [Phase 8 results](Updates/R7-api-contracts-phase-8-verification-results.md) for executed totals, remediation and warnings.
 
-### Words
-- `GET /api/words/search/{term}` - Search words in local database
-- `GET /api/words/definitions/{word}` - Get definitions from external API
-- `GET /api/words/{id}` - Get specific word details (requires JWT)
+| Method | Route | Authentication |
+|---|---|---|
+| POST | `/api/users/register` | Anonymous |
+| POST | `/api/users/login` | Anonymous |
+| GET | `/api/users/profile` | Bearer |
+| POST | `/api/users/change-password` | Bearer |
+| GET | `/api/users/validate-token` | Bearer |
+| GET | `/api/words/lookup/{word}` | Bearer fallback |
+| POST | `/api/words/vocabulary/add` | Bearer |
+| GET | `/api/words/vocabulary` | Bearer |
+| GET | `/api/words/vocabulary/search` | Bearer |
+| PUT | `/api/words/vocabulary/{userWordId:int}/favorite` | Bearer |
+| PUT | `/api/words/vocabulary/{userWordId:int}/preferred-definition` | Bearer |
+| POST | `/api/quiz/start` | Bearer |
+| POST | `/api/quiz/submit` | Bearer |
+| GET | `/api/quiz/history` | Bearer |
+
+Application errors use six-field JSON; binding/validation uses extended ValidationProblemDetails; framework Bearer challenges may be empty. Vocabulary identity is `(UserId, WordId)`. Duplicate add succeeds. Favorite requires explicit isFavorite (false valid); quiz answers require explicit selectedOptionId (zero valid). Ignored definition/example/pronunciation add fields remain accepted and deprecated; POS remains an active selection fallback.
 
 ## Configuration
 
@@ -118,31 +128,20 @@ be valid and users will need to sign in again.
 - Seeded Data: 8 parts of speech records
 - Verified in SQL Server Management Studio
 
-## Development Status
+## Development Status (implementation, not R7 execution evidence)
 - ✅ **Database Layer**: Complete with Entity Framework models and context
 - ✅ **Business Logic**: WordService and UserService implemented
-- ✅ **API Controllers**: Words and Users controllers with full CRUD operations
+- ✅ **API Controllers**: Users, Words and Quiz controllers with the 14 actions above
 - ✅ **Authentication**: JWT-based security system
 - ✅ **External Integration**: Dictionary API service
 - ✅ **Documentation**: Swagger UI with JWT support
 - ✅ **Testing**: HTTP test file for endpoint validation
 
-## Next Steps (Future Enhancements)
-1. **UserWordService**: Personal vocabulary collection management
-2. **QuizService**: Vocabulary testing and progress tracking
-3. **ChatService**: AI-powered vocabulary assistant
-4. **Angular Frontend**: User interface implementation
-5. **Advanced Features**: 
-   - Spaced repetition algorithms
-   - Progress analytics
-   - Social features (word sharing)
-   - Offline support
+## Verification and future work
 
-## How to Test
-1. **Start the application**: `dotnet run` in VocabularyApp.WebApi
-2. **Open Swagger UI**: Navigate to `http://localhost:5190/swagger`
-3. **Test with HTTP file**: Use `test-api.http` with REST Client extension
-4. **Database verification**: Connect to LocalDB with SSMS
+Vocabulary/quiz services and the Angular UI are implemented. Broader chat, analytics, sharing and offline work remain outside R7. Historical database/security evidence above is not R7 verification evidence.
+
+`test-api.http` and `VocabularyApp.WebApi/VocabularyApp.WebApi.http` contain all 14 current request examples with local placeholders. They are documentation, not instructions to execute during Phase 7. Phase 8 completed local verification: 454 backend and 193 Angular tests passed; Release solution and Angular production builds passed. TestServer/private SQLite and deterministic provider stubs kept verification isolated. Existing npm audit vulnerabilities remain for separate release/security review; no production access, live provider call or deployment occurred.
 
 ## Technology Stack
 - **.NET 8.0 (LTS)**: Stable framework for hosting compatibility
@@ -152,4 +151,4 @@ be valid and users will need to sign in again.
 - **Swagger/OpenAPI**: API documentation and testing
 - **HttpClient**: External API integration
 
-The application is now fully functional with a solid foundation for vocabulary learning features. The architecture supports easy extension for additional services and frontend integration.
+R7 is implemented and locally execution verified. Source review and any commit/release/deployment decision remain separately authorized; see Phase 8 evidence and limitations above.

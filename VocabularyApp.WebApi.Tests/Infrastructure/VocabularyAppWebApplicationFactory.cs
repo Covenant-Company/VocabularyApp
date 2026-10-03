@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -19,6 +20,10 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
     private static readonly JwtSettings TestJwtSettings = TestJwtSettingsFactory.Create();
     private readonly SqliteConnection _connection;
     private readonly string _environmentName;
+
+    // Optional fault injection on the existing relational host; set before CreateClient/Services.
+    public IInterceptor[] AdditionalInterceptors { get; set; } = [];
+    public Action<IServiceCollection>? ConfigureTestServices { get; set; }
 
     public ControllableDictionaryHandler DictionaryHandler { get; } = new();
     public QuizPersistenceFailureInterceptor QuizPersistenceFailure { get; } = new();
@@ -90,12 +95,14 @@ public sealed class VocabularyAppWebApplicationFactory : WebApplicationFactory<P
                         QuizPersistenceFailure,
                         QuizSubmissionSynchronization,
                         VocabularySaveSynchronization,
-                        VocabularyPersistenceFailure));
+                        VocabularyPersistenceFailure)
+                    .AddInterceptors(AdditionalInterceptors));
 
             services.RemoveAll<IWordService>();
             services.AddHttpClient<IWordService, WordService>()
                 .ConfigurePrimaryHttpMessageHandler(
                     () => DictionaryHandler);
+            ConfigureTestServices?.Invoke(services);
         });
     }
 

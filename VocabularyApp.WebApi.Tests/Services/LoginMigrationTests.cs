@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
@@ -33,8 +34,8 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var result = await LoginAsync(user.Username, password);
         var persistedUser = await ReloadUserAsync(user.Id);
 
-        Assert.True(result.Success);
-        Assert.False(string.IsNullOrWhiteSpace(result.Token));
+        Assert.True(result.IsSuccess);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data?.Token));
         Assert.NotNull(persistedUser.LastLoginAt);
         Assert.NotEqual(originalHash, persistedUser.PasswordHash);
         Assert.False(new LegacyPasswordVerifier().IsLegacyFormat(persistedUser.PasswordHash));
@@ -56,8 +57,10 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var result = await LoginAsync(user.Username, "wrong password");
         var persistedUser = await ReloadUserAsync(user.Id);
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("invalid_credentials", result.Code);
+        Assert.Null(result.Data?.Token);
         Assert.Equal(originalHash, persistedUser.PasswordHash);
         Assert.Null(persistedUser.LastLoginAt);
     }
@@ -75,8 +78,8 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var result = await LoginAsync(user.Username, password);
         var persistedUser = await ReloadUserAsync(user.Id);
 
-        Assert.True(result.Success);
-        Assert.False(string.IsNullOrWhiteSpace(result.Token));
+        Assert.True(result.IsSuccess);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data?.Token));
         Assert.Equal(originalHash, persistedUser.PasswordHash);
         Assert.NotNull(persistedUser.LastLoginAt);
         Assert.Equal(
@@ -96,8 +99,10 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var result = await LoginAsync(user.Username, "wrong password");
         var persistedUser = await ReloadUserAsync(user.Id);
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("invalid_credentials", result.Code);
+        Assert.Null(result.Data?.Token);
         Assert.Equal(originalHash, persistedUser.PasswordHash);
         Assert.Null(persistedUser.LastLoginAt);
     }
@@ -115,7 +120,7 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         };
         var passwordService = new PasswordService(controlledHasher, new LegacyPasswordVerifier());
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var context = _fixture.CreateContext())
         {
             result = await CreateUserService(context, passwordService)
@@ -123,8 +128,8 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         }
 
         var persistedUser = await ReloadUserAsync(user.Id);
-        Assert.True(result.Success);
-        Assert.False(string.IsNullOrWhiteSpace(result.Token));
+        Assert.True(result.IsSuccess);
+        Assert.False(string.IsNullOrWhiteSpace(result.Data?.Token));
         Assert.Equal(replacementHash, persistedUser.PasswordHash);
         Assert.NotNull(persistedUser.LastLoginAt);
     }
@@ -140,9 +145,11 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var result = await LoginAsync(user.Username, "any password");
         var persistedUser = await ReloadUserAsync(user.Id);
 
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
-        Assert.Equal("Invalid username or password", result.ErrorMessage);
+        Assert.False(result.IsSuccess);
+        Assert.Null(result.Data?.Token);
+        Assert.Equal("Invalid username or password", result.Message);
+        Assert.Equal(ServiceFailureType.Unauthorized, result.FailureType);
+        Assert.Equal("invalid_credentials", result.Code);
         Assert.Equal(storedHash, persistedUser.PasswordHash);
         Assert.Null(persistedUser.LastLoginAt);
     }
@@ -155,7 +162,7 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         var user = CreateTestUser(originalHash);
         await SeedUserAsync(user);
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var context = _fixture.CreateContext(new ThrowOnSaveInterceptor()))
         {
             result = await CreateUserService(context)
@@ -163,8 +170,10 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         }
 
         var persistedUser = await ReloadUserAsync(user.Id);
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceFailureType.InternalError, result.FailureType);
+        Assert.Equal("internal_error", result.Code);
+        Assert.Null(result.Data?.Token);
         Assert.Equal(originalHash, persistedUser.PasswordHash);
         Assert.Null(persistedUser.LastLoginAt);
     }
@@ -192,7 +201,7 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         };
         var passwordService = new PasswordService(controlledHasher, new LegacyPasswordVerifier());
 
-        AuthResponse result;
+        ServiceResult<AuthResponse> result;
         await using (var staleContext = _fixture.CreateContext())
         {
             result = await CreateUserService(staleContext, passwordService)
@@ -200,8 +209,10 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
         }
 
         var persistedUser = await ReloadUserAsync(user.Id);
-        Assert.False(result.Success);
-        Assert.Null(result.Token);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceFailureType.Conflict, result.FailureType);
+        Assert.Equal("credentials_changed", result.Code);
+        Assert.Null(result.Data?.Token);
         Assert.Equal(newerHash, persistedUser.PasswordHash);
         Assert.Equal(
             PasswordVerificationResult.Success,
@@ -211,7 +222,7 @@ public sealed class LoginMigrationTests : IClassFixture<RelationalDatabaseFixtur
                 newerPassword));
     }
 
-    private async Task<AuthResponse> LoginAsync(string username, string password)
+    private async Task<ServiceResult<AuthResponse>> LoginAsync(string username, string password)
     {
         await using var context = _fixture.CreateContext();
         return await CreateUserService(context)

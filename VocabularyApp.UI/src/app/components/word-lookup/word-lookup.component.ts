@@ -3,8 +3,18 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ApiService } from '../../services/api.service';
 import { Router } from '@angular/router';
-import { AddToVocabularyResult, WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
+import { Definition, WordLookupResult, PartOfSpeechGroup, SearchSuggestion, POS_PRIORITY, VocabularyResponse, VocabularyItem } from '../../models/word-lookup.model';
 import { ToastService } from '../../services/toast.service';
+import { normalizeApiError } from '../../services/api-error';
+import { AddToVocabularyResult, AddWordRequest, FavoriteRequest, FavoriteResponse, PreferredDefinitionRequest, PreferredDefinitionResponse,
+  VocabularyItemDto, VocabularyResponseDto, WordLookupResponse, wordLookupPath, vocabularySearchPath } from '../../models/word-api.model';
+
+function vocabularyView(item: VocabularyItemDto): VocabularyItem {
+  return { ...item, preferredWordDefinitionId: item.preferredWordDefinitionId ?? undefined,
+    example: item.example ?? undefined, pronunciation: item.pronunciation ?? undefined,
+    audioUrl: item.audioUrl ?? undefined, personalNotes: item.personalNotes ?? undefined,
+    accuracyRate: item.accuracyRate ?? undefined };
+}
 
 interface DefinitionOption {
   id: number;
@@ -38,6 +48,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
   // Vocabulary list properties
   showVocabularyList = false;
   vocabularyLoading = false;
+  vocabularyError = '';
   vocabularyResponse: VocabularyResponse | null = null;
   vocabularySearchQuery = ''; // Search query for filtering vocabulary list
   selectedVocabularyLetter: string | null = null;
@@ -94,14 +105,15 @@ export class WordLookupComponent implements OnInit, OnDestroy {
   }
 
   searchUserVocabulary(term: string): void {
+    this.errorMessage = '';
     // Search user's vocabulary for autocomplete suggestions
-    this.apiService.get<any>(`/words/vocabulary/search?term=${encodeURIComponent(term)}`).subscribe({
+    this.apiService.get<VocabularyResponseDto>(vocabularySearchPath(term)).subscribe({
       next: (res) => {
         this.suggestions = [];
 
         // Add existing words from user's vocabulary
-        if (res?.data?.words && Array.isArray(res.data.words)) {
-          const existingSuggestions = res.data.words.slice(0, 5).map((item: any) => ({
+        if (res?.success && res.data && Array.isArray(res.data.words)) {
+          const existingSuggestions = res.data.words.slice(0, 5).map(item => ({
             word: item.word,
             type: 'existing' as const,
             partOfSpeech: item.partOfSpeech || 'unknown',
@@ -109,6 +121,8 @@ export class WordLookupComponent implements OnInit, OnDestroy {
             action: 'Review word'
           }));
           this.suggestions.push(...existingSuggestions);
+        } else {
+          this.errorMessage = 'Unable to search your vocabulary.';
         }
 
         // Always add option to search dictionary
@@ -119,7 +133,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
         });
       },
       error: (err) => {
-        console.error('Error searching vocabulary:', err);
+        this.errorMessage = normalizeApiError(err, 'vocabulary-search', 'Unable to search your vocabulary.').message;
         // On error, just show search dictionary option
         this.suggestions = [
           {
@@ -149,16 +163,16 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     this.errorMessage = '';
     this.currentWord = null;
 
-    this.apiService.get<any>(`/words/vocabulary/search?term=${encodeURIComponent(word)}`).subscribe({
+    this.apiService.get<VocabularyResponseDto>(vocabularySearchPath(word)).subscribe({
       next: (res) => {
-        if (res?.data?.words && res.data.words.length > 0) {
+        if (res?.success && res.data && Array.isArray(res.data.words) && res.data.words.length > 0) {
           // Find the exact match (case-insensitive)
-          const userWord = res.data.words.find((w: any) => w.word.toLowerCase() === word.toLowerCase()) || res.data.words[0];
+          const userWord = res.data.words.find(w => w.word.toLowerCase() === word.toLowerCase()) || res.data.words[0];
           // Map the user's vocabulary word to WordLookupResult format
           const mapped: WordLookupResult = {
             word: userWord.word,
-            phonetic: userWord.pronunciation,
-            audioUrl: userWord.audioUrl,
+            phonetic: userWord.pronunciation ?? undefined,
+            audioUrl: userWord.audioUrl ?? undefined,
             partOfSpeechGroups: [
               {
                 partOfSpeech: userWord.partOfSpeech || 'unknown',
@@ -188,8 +202,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
         this.isLoading = false;
       },
       error: (err) => {
-        console.error('Error fetching word from vocabulary:', err);
-        this.errorMessage = 'Failed to load word from your vocabulary.';
+        this.errorMessage = normalizeApiError(err, 'vocabulary-search', 'Failed to load word from your vocabulary.').message;
         this.isLoading = false;
       }
     });
@@ -210,22 +223,22 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     }
     this.viewingFromVocabularyList = fromVocabularyList;
     // Use the lookup endpoint which returns full definitions
-    this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word)}`).subscribe({
+    this.apiService.get<WordLookupResponse>(wordLookupPath(word)).subscribe({
       next: (res) => {
         try {
-          if (res && (res as any).success && (res as any).data) {
+          if (res?.success && res.data?.success) {
             // Backend wraps WordLookupResponse inside ApiResponse.Data
-            const lookupResp = (res as any).data; // WordLookupResponse from backend
+            const lookupResp = res.data;
             const wordDto = lookupResp.word; // WordDto
-            if (wordDto) {
+            if (wordDto && typeof wordDto.text === 'string' && Array.isArray(wordDto.definitions)) {
               // Map WordDto -> UI WordLookupResult shape
               const mapped: WordLookupResult = {
                 word: wordDto.text || word,
-                phonetic: wordDto.pronunciation,
-                audioUrl: wordDto.audioUrl,
+                phonetic: wordDto.pronunciation ?? undefined,
+                audioUrl: wordDto.audioUrl ?? undefined,
                 source: lookupResp.isInUserVocabulary ? 'user' : (lookupResp.wasFoundInCache ? 'canonical' : 'external'),
                 partOfSpeechGroups: []
-              } as any;
+              };
 
               // Group definitions by part of speech
               const groupsMap: Record<string, PartOfSpeechGroup> = {};
@@ -234,20 +247,18 @@ export class WordLookupComponent implements OnInit, OnDestroy {
                 if (!groupsMap[pos]) {
                   groupsMap[pos] = {
                     partOfSpeech: pos,
-                    priority: (POS_PRIORITY as any)[pos] ?? 99,
+                    priority: POS_PRIORITY[pos as keyof typeof POS_PRIORITY] ?? 99,
                     definitions: [],
                     isExpanded: false,
                     primaryDefinitions: []
-                  } as PartOfSpeechGroup;
+                  };
                 }
 
-                const d = {
+                const d: Definition = {
                   id: def.id,
                   definition: def.definition,
-                  example: def.example,
-                  synonyms: def.synonyms,
-                  antonyms: def.antonyms
-                } as any;
+                  example: def.example ?? undefined
+                };
 
                 groupsMap[pos].definitions.push(d);
               }
@@ -262,33 +273,19 @@ export class WordLookupComponent implements OnInit, OnDestroy {
               this.processWordResult(this.currentWord);
               this.searchTerm = ''; // Clear search input after successful lookup
             } else {
-              this.errorMessage = lookupResp.errorMessage || 'No definitions found for this word.';
+              this.errorMessage = 'Unable to load word definitions.';
             }
           } else {
-            this.errorMessage = (res as any).errorMessage || 'No definitions found for this word.';
+            this.errorMessage = 'Unable to load word definitions.';
           }
         } catch (ex) {
-          console.error('Mapping error:', ex);
           this.errorMessage = 'Failed to process word definition.';
         }
 
         this.isLoading = false;
       },
       error: (err) => {
-        console.error('API error searching word:', err);
-
-        // Handle different error scenarios
-        if (err.status === 404) {
-          this.errorMessage = `Word "${word}" not found. Please check the spelling and try again.`;
-        } else if (err.error?.error) {
-          this.errorMessage = err.error.error;
-        } else if (err.error?.errorMessage) {
-          this.errorMessage = err.error.errorMessage;
-        } else if (err.message) {
-          this.errorMessage = err.message;
-        } else {
-          this.errorMessage = `Unable to find "${word}". Please check the spelling or try a different word.`;
-        }
+        this.errorMessage = normalizeApiError(err, 'lookup', 'Unable to load word definitions.').message;
 
         this.isLoading = false;
       }
@@ -315,7 +312,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     }
   }
 
-  private processWordResult(result: any): void {
+  private processWordResult(result: WordLookupResult): void {
     // Process and sort the word definition groups by priority
     this.sortedGroups = result.partOfSpeechGroups
       .sort((a: PartOfSpeechGroup, b: PartOfSpeechGroup) => {
@@ -325,7 +322,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
       });
   }
 
-  private prioritizeDefinitions(definitions: any[]): any[] {
+  private prioritizeDefinitions(definitions: Definition[]): Definition[] {
     return definitions
       .sort((a, b) => {
         // Prioritize definitions with examples
@@ -346,10 +343,9 @@ export class WordLookupComponent implements OnInit, OnDestroy {
       return;
     }
 
-    // Build payload for the backend AddWordRequest DTO
-    // We send a single "primary" definition for simplicity; you can change this to send many.
+    // Preserve the legacy payload; definition/example do not author canonical data.
     const firstDef = this.currentWord.partOfSpeechGroups?.[0]?.definitions?.[0];
-    const payload = {
+    const payload: AddWordRequest = {
       word: this.currentWord.word,
       definition: firstDef?.definition ?? '',
       partOfSpeech: this.currentWord.partOfSpeechGroups?.[0]?.partOfSpeech ?? '',
@@ -358,9 +354,14 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     };
 
     // Use your ApiService post helper (see next section). Endpoint path is appended to baseUrl.
-    this.apiService.post<AddToVocabularyResult>('/words/vocabulary/add', payload).subscribe({
+    this.apiService.post<AddToVocabularyResult, AddWordRequest>('/words/vocabulary/add', payload).subscribe({
       next: (res) => {
-        console.log('Add to vocabulary response:', res);
+        if (!res?.success || !res.data || !Number.isInteger(res.data.userWordId) || res.data.userWordId <= 0
+          || !Number.isInteger(res.data.wordId) || res.data.wordId <= 0 || typeof res.data.alreadyExisted !== 'boolean'
+          || typeof res.data.message !== 'string') {
+          this.toastService.error('Unable to confirm the vocabulary update.');
+          return;
+        }
         // show user feedback with toast
         const message = res.data?.alreadyExisted
           ? `Word "${this.currentWord?.word}" is already in your vocabulary.`
@@ -374,8 +375,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
         this.vocabularyNeedsRefresh = true;
       },
       error: (err) => {
-        console.error('Error adding word:', err);
-        const msg = err?.error?.message || err?.error?.errorMessage || 'Failed to add word';
+        const msg = normalizeApiError(err, 'vocabulary-add', 'Failed to add word').message;
         this.toastService.error(msg);
       }
     });
@@ -410,27 +410,25 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     if (page < 1) return;
 
     this.vocabularyLoading = true;
-    // Load all words (use a large page size to get everything for search functionality)
-    this.apiService.get<any>(`/words/vocabulary?page=${page}&pageSize=1000`).subscribe({
+    this.vocabularyError = '';
+    this.apiService.get<VocabularyResponseDto>(`/words/vocabulary?page=${page}&pageSize=1000`).subscribe({
       next: (res) => {
-        if (res && res.success && res.data) {
-          this.vocabularyResponse = res.data;
+        if (res?.success && res.data && Array.isArray(res.data.words)
+          && Number.isFinite(res.data.totalCount) && Number.isFinite(res.data.page)
+          && Number.isFinite(res.data.pageSize) && Number.isFinite(res.data.totalPages)) {
+          this.vocabularyResponse = { ...res.data, words: res.data.words.map(vocabularyView) };
           this.ensureSelectedLetterIsValid();
+          this.vocabularyNeedsRefresh = false;
         } else {
-          console.error('Invalid vocabulary response format:', res);
-          this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
-          this.selectedVocabularyLetter = null;
+          this.vocabularyError = 'Unable to load your vocabulary.';
+          this.vocabularyNeedsRefresh = true;
         }
-        this.vocabularyNeedsRefresh = false;
         this.vocabularyLoading = false;
       },
       error: (err) => {
-        console.error('Error loading vocabulary:', err);
+        this.vocabularyError = normalizeApiError(err, 'vocabulary-list', 'Unable to load your vocabulary.').message;
         this.vocabularyLoading = false;
-        // Show empty state or error message
-        this.vocabularyResponse = { words: [], totalCount: 0, page: 1, pageSize: 1000, totalPages: 0 };
-        this.selectedVocabularyLetter = null;
-        this.vocabularyNeedsRefresh = false;
+        this.vocabularyNeedsRefresh = true;
       }
     });
   }
@@ -478,13 +476,13 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     this.searchNewWord(word.word, true);
   }
 
-  buildDefinitionOptions(definitions: any[]): DefinitionOption[] {
+  buildDefinitionOptions(definitions: { id: number; definition: string; example?: string | null; partOfSpeech: string; displayOrder?: number }[]): DefinitionOption[] {
     const mappedDefinitions = (definitions || [])
-      .filter((d: any) => Number.isFinite(d?.id))
-      .map((d: any) => ({
+      .filter(d => Number.isFinite(d?.id))
+      .map(d => ({
         id: d.id,
         definition: d.definition,
-        example: d.example,
+        example: d.example ?? undefined,
         partOfSpeech: d.partOfSpeech,
         displayOrder: d.displayOrder
       }));
@@ -519,9 +517,10 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     this.selectedPreferredDefinitionId = null;
     this.showDefinitionEditor = true;
 
-    this.apiService.get<any>(`/words/lookup/${encodeURIComponent(word.word)}`).subscribe({
+    this.apiService.get<WordLookupResponse>(wordLookupPath(word.word)).subscribe({
       next: (res) => {
-        const definitions = (res as any)?.data?.word?.definitions || [];
+        const definitions = res?.success && res.data?.success && res.data.word && Array.isArray(res.data.word.definitions)
+          ? res.data.word.definitions : [];
 
         this.definitionOptions = this.buildDefinitionOptions(definitions);
 
@@ -538,9 +537,8 @@ export class WordLookupComponent implements OnInit, OnDestroy {
         this.definitionEditorLoading = false;
       },
       error: (err) => {
-        console.error('Failed to load definitions for editor:', err);
         this.definitionEditorLoading = false;
-        this.toastService.error('Failed to load definitions for this word.');
+        this.toastService.error(normalizeApiError(err, 'lookup', 'Failed to load definitions for this word.').message);
         this.closeDefinitionEditor();
       }
     });
@@ -565,10 +563,16 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     const selectedDefinition = this.definitionOptions.find(option => option.id === definitionId);
 
     this.definitionEditorSaving = true;
-    this.apiService.put<any>(`/words/vocabulary/${userWordId}/preferred-definition`, {
+    this.apiService.put<PreferredDefinitionResponse, PreferredDefinitionRequest>(`/words/vocabulary/${userWordId}/preferred-definition`, {
       preferredWordDefinitionId: definitionId
     }).subscribe({
-      next: () => {
+      next: res => {
+        if (!res?.success || !res.data || res.data.userWordId !== userWordId || res.data.preferredWordDefinitionId !== definitionId
+          || typeof res.data.message !== 'string') {
+          this.definitionEditorSaving = false;
+          this.toastService.error('Unable to confirm the preferred definition update.');
+          return;
+        }
         if (this.vocabularyResponse?.words) {
           const target = this.vocabularyResponse.words.find(item => item.id === userWordId);
           if (target) {
@@ -597,9 +601,8 @@ export class WordLookupComponent implements OnInit, OnDestroy {
         this.closeDefinitionEditor();
       },
       error: (err) => {
-        console.error('Error saving preferred definition:', err);
         this.definitionEditorSaving = false;
-        const msg = err?.error?.error || err?.error?.errorMessage || 'Failed to save preferred definition';
+        const msg = normalizeApiError(err, 'preferred-definition', 'Failed to save preferred definition').message;
         this.toastService.error(msg);
       }
     });
@@ -612,16 +615,20 @@ export class WordLookupComponent implements OnInit, OnDestroy {
     const previousValue = word.isFavorite;
     word.isFavorite = newValue;
 
-    this.apiService.put<any>(`/words/vocabulary/${word.id}/favorite`, { isFavorite: newValue }).subscribe({
-      next: () => {
+    this.apiService.put<FavoriteResponse, FavoriteRequest>(`/words/vocabulary/${word.id}/favorite`, { isFavorite: newValue }).subscribe({
+      next: res => {
+        if (!res?.success || !res.data || res.data.userWordId !== word.id || res.data.isFavorite !== newValue || typeof res.data.message !== 'string') {
+          word.isFavorite = previousValue;
+          this.toastService.error('Unable to confirm the favorite update.');
+          return;
+        }
         this.toastService.success(
           newValue ? `"${word.word}" added to favorites` : `"${word.word}" removed from favorites`
         );
       },
       error: (err) => {
-        console.error('Error updating favorite state:', err);
         word.isFavorite = previousValue;
-        const msg = err?.error?.error || err?.error?.errorMessage || 'Failed to update favorite state';
+        const msg = normalizeApiError(err, 'favorite', 'Failed to update favorite state').message;
         this.toastService.error(msg);
       }
     });
@@ -647,7 +654,7 @@ export class WordLookupComponent implements OnInit, OnDestroy {
 
   getLetterTooltip(letter: string, count: number): string {
     const wordLabel = count === 1 ? 'word starts' : 'words start';
-    return `${count} ${wordLabel} with "${letter}"`;
+    return `${count} ${wordLabel} with "${letter}" on this page`;
   }
 
   selectVocabularyLetter(letter: string): void {

@@ -1,10 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text;
+using System.Reflection;
+using System.Collections;
+using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using VocabularyApp.Data;
+using VocabularyApp.Data.Models;
 using VocabularyApp.WebApi.DTOs;
+using VocabularyApp.WebApi.Services;
 using VocabularyApp.WebApi.Tests.Infrastructure;
 
 namespace VocabularyApp.WebApi.Tests.Integration;
@@ -338,7 +345,8 @@ public sealed class QuizApiTests : QuizApiTestBase
 
         using var attack = await users.UserB.Client.PostAsJsonAsync("/api/quiz/submit", submission);
 
-        Assert.Equal(HttpStatusCode.BadRequest, attack.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, attack.StatusCode);
+        await AssertSessionUnavailableAsync(attack);
         Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
         AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
 
@@ -366,6 +374,8 @@ public sealed class QuizApiTests : QuizApiTestBase
         var staleWord = FindSeededWord(start.Questions[0], words);
         var survivingWord = FindSeededWord(start.Questions[1], words);
         var beforeSurvivor = await LoadLearningStateAsync(factory, survivingWord.UserWordId);
+        var remainingIds = words.Where(word => word.UserWordId != staleWord.UserWordId).Select(word => word.UserWordId).ToArray();
+        var beforeRemaining = await LoadLearningStatesAsync(factory, remainingIds);
 
         await DeleteUserWordAsync(factory, staleWord.UserWordId);
 
@@ -373,10 +383,18 @@ public sealed class QuizApiTests : QuizApiTestBase
             "/api/quiz/submit",
             CreateCorrectSubmission(start, words));
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        await ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.Conflict,
+            "quiz_vocabulary_changed", "Your vocabulary changed. Please start a new quiz.");
         Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
         var afterSurvivor = await LoadLearningStateAsync(factory, survivingWord.UserWordId);
         AssertLearningStateUnchanged(beforeSurvivor, afterSurvivor);
+        AssertLearningStatesUnchanged(beforeRemaining, await LoadLearningStatesAsync(factory, remainingIds));
+        using var repeated = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        await ApiErrorContractAssert.ApplicationAsync(repeated, HttpStatusCode.Conflict,
+            "quiz_vocabulary_changed", "Your vocabulary changed. Please start a new quiz.");
+        Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
+        AssertLearningStatesUnchanged(beforeRemaining, await LoadLearningStatesAsync(factory, remainingIds));
     }
 
     [Fact]
@@ -403,7 +421,8 @@ public sealed class QuizApiTests : QuizApiTestBase
 
         using var duplicate = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
 
-        Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, duplicate.StatusCode);
+        await AssertSessionUnavailableAsync(duplicate);
         var results = await LoadSessionResultsAsync(factory, start.SessionId);
         Assert.Equal(start.QuestionCount, results.Count);
         var afterDuplicate = await LoadLearningStatesAsync(factory, afterFirst.Keys);
@@ -437,7 +456,8 @@ public sealed class QuizApiTests : QuizApiTestBase
         {
             using var failed = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
 
-            Assert.Equal(HttpStatusCode.BadRequest, failed.StatusCode);
+            Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+            await ApiErrorContractAssert.InternalAsync(failed, user.User.Token);
             Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
             AssertLearningStatesUnchanged(
                 before,
@@ -507,7 +527,9 @@ public sealed class QuizApiTests : QuizApiTestBase
             firstResponse = await firstSubmission.WaitAsync(TimeSpan.FromSeconds(5));
 
             Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
-            Assert.Equal(HttpStatusCode.BadRequest, secondResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.Conflict, secondResponse.StatusCode);
+            await ApiErrorContractAssert.ApplicationAsync(secondResponse, HttpStatusCode.Conflict,
+                "quiz_submission_conflict", "This quiz submission is already being processed or has been submitted.");
         }
         finally
         {
@@ -622,12 +644,17 @@ public sealed class QuizApiTests : QuizApiTestBase
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "unknown-session",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
 
         using var response = await user.Client.PostAsJsonAsync(
             "/api/quiz/submit",
             new QuizSubmitRequestDto { SessionId = Guid.NewGuid() });
 
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        await AssertSessionUnavailableAsync(response);
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
         using var scope = factory.Services.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         Assert.Empty(await context.QuizResults.ToListAsync());
@@ -660,6 +687,389 @@ public sealed class QuizApiTests : QuizApiTestBase
         Assert.Equal(HttpStatusCode.OK, responseB.StatusCode);
         Assert.Collection(historyA.Items, item => Assert.Equal(1, item.TotalQuestions));
         Assert.Collection(historyB.Items, item => Assert.Equal(2, item.TotalQuestions));
+    }
+
+    [Theory]
+    [InlineData("omitted-option", false)]
+    [InlineData("null-option", false)]
+    [InlineData("string-option", false)]
+    [InlineData("fractional-option", false)]
+    [InlineData("object-option", false)]
+    [InlineData("unknown-option", true)]
+    [InlineData("malformed-question", false)]
+    [InlineData("null-answers", false)]
+    [InlineData("null-element", true)]
+    [InlineData("mixed-null-element", true)]
+    public async Task InvalidRawAnswerStructuresDoNotMutateAndPermitValidRetry(string kind, bool applicationError)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "raw-invalid",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        var answer = new Dictionary<string, object?> { ["questionId"] = start.Questions[0].QuestionId };
+        if (kind != "omitted-option")
+            answer["selectedOptionId"] = kind switch
+            {
+                "null-option" => null,
+                "string-option" => ApiErrorContractAssert.Sentinel,
+                "fractional-option" => 0.5,
+                "object-option" => new { value = 0 },
+                "unknown-option" => 999,
+                _ => 0
+            };
+        if (kind == "malformed-question") answer["questionId"] = ApiErrorContractAssert.Sentinel;
+        object? answers = kind switch
+        {
+            "null-answers" => null,
+            "null-element" => new object?[] { null },
+            "mixed-null-element" => new object?[] { answer, null },
+            _ => new object[] { answer }
+        };
+        using var content = new StringContent(JsonSerializer.Serialize(new { sessionId = start.SessionId, answers }),
+            Encoding.UTF8, "application/json");
+        using var response = await user.Client.PostAsync("/api/quiz/submit", content);
+        if (applicationError)
+            await ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.BadRequest,
+                "invalid_quiz_answers", "The quiz answers are invalid.");
+        else
+            await AssertQuizValidationAsync(response);
+        Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+
+        using var retry = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal(2, (await LoadSessionResultsAsync(factory, start.SessionId)).Count);
+        var after = await LoadLearningStatesAsync(factory, before.Keys);
+        foreach (var question in start.Questions)
+        {
+            var id = FindSeededWord(question, words).UserWordId;
+            AssertLearningState(after[id], 3, 6, true, PreviousCorrectUtc, true);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MissingOrEmptyAnswersAreValidUnansweredSubmissions(bool includeAnswers)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "empty-answers",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var payload = new Dictionary<string, object?> { ["sessionId"] = start.SessionId };
+        if (includeAnswers) payload["answers"] = Array.Empty<object>();
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await user.Client.PostAsync("/api/quiz/submit", content);
+        using var json = await JsonContractAssert.ReadSuccessAsync(response);
+        var data = JsonContractAssert.SuccessData(json.RootElement);
+        JsonContractAssert.Properties(data, "totalQuestions", "correctAnswers", "scorePercentage", "questionResults");
+        Assert.Equal(2, data.GetProperty("totalQuestions").GetInt32());
+        Assert.Equal(0, data.GetProperty("correctAnswers").GetInt32());
+        Assert.Equal(0, data.GetProperty("scorePercentage").GetDouble());
+        Assert.Equal(2, data.GetProperty("questionResults").GetArrayLength());
+        foreach (var result in data.GetProperty("questionResults").EnumerateArray())
+        {
+            JsonContractAssert.Properties(result, "questionId", "questionType", "prompt", "selectedAnswer", "correctAnswer", "isCorrect");
+            JsonContractAssert.Property(result, "selectedAnswer", JsonValueKind.Null);
+            JsonContractAssert.Property(result, "isCorrect", JsonValueKind.False);
+        }
+        var persisted = await LoadSessionResultsAsync(factory, start.SessionId);
+        Assert.Equal(2, persisted.Count);
+        Assert.All(persisted, result => { Assert.False(result.IsCorrect); Assert.Null(result.UserAnswer); });
+        var states = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        foreach (var question in start.Questions)
+            AssertLearningState(states[FindSeededWord(question, words).UserWordId], 2, 6, true, PreviousCorrectUtc, false);
+        Assert.All(persisted, result => Assert.Equal(result.AttemptedAt, states[result.UserWordId].LastReviewedAt));
+    }
+
+    [Fact]
+    public async Task ExplicitRawOptionZeroIsAcceptedAndScoredNormally()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "option-zero");
+        var start = await StartQuizAsync(user.Client, 1);
+        var question = Assert.Single(start.Questions);
+        var selected = question.Options.Single(option => option.OptionId == 0);
+        var correct = selected.Text == FindSeededWord(question, words).Definition;
+        using var content = new StringContent(JsonSerializer.Serialize(new
+        {
+            sessionId = start.SessionId,
+            answers = new[] { new { questionId = question.QuestionId, selectedOptionId = 0 } }
+        }), Encoding.UTF8, "application/json");
+        using var response = await user.Client.PostAsync("/api/quiz/submit", content);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = ReadData<QuizSubmitResponseDto>(await response.Content.ReadAsStringAsync());
+        Assert.Equal(selected.Text, Assert.Single(result.QuestionResults).SelectedAnswer);
+        Assert.Equal(correct ? 1 : 0, result.CorrectAnswers);
+        var persisted = Assert.Single(await LoadSessionResultsAsync(factory, start.SessionId));
+        Assert.Equal(correct, persisted.IsCorrect);
+        Assert.Equal(selected.Text, persisted.UserAnswer);
+        var state = await LoadLearningStateAsync(factory, persisted.UserWordId);
+        Assert.Equal(1, state.TotalAttempts);
+        Assert.Equal(correct ? 1 : 0, state.CorrectAnswers);
+        Assert.NotNull(state.LastReviewedAt);
+        Assert.Equal(correct, state.LastCorrectAt.HasValue);
+    }
+
+    [Fact]
+    public async Task ExpiredSessionIsConcealedAndDoesNotMutate()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "expiry",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        // Test-local reflection controls the existing timestamp; no production expiry hook or sleep.
+        var sessions = Assert.IsAssignableFrom<IDictionary>(typeof(QuizService)
+            .GetField("QuizSessions", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null));
+        var state = sessions[start.SessionId]!;
+        state.GetType().GetProperty("ExpiresAtUtc")!.SetValue(state, DateTime.UtcNow.AddMinutes(-1));
+        var submission = CreateCorrectSubmission(start, words);
+        using var expired = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
+        await AssertSessionUnavailableAsync(expired);
+        using var removed = await user.Client.PostAsJsonAsync("/api/quiz/submit", submission);
+        await AssertSessionUnavailableAsync(removed);
+        Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+        var replacement = await StartQuizAsync(user.Client, 1);
+        using var success = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(replacement, words));
+        Assert.Equal(HttpStatusCode.OK, success.StatusCode);
+    }
+
+    [Fact]
+    public async Task PersistedDuplicateReturnsConflictAndRollsBackAllAttemptedChanges()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "persisted-duplicate",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var word = FindSeededWord(start.Questions[0], words);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            db.QuizResults.Add(new QuizResult
+            {
+                UserId = user.User.User.Id, UserWordId = word.UserWordId, QuizSessionId = start.SessionId,
+                QuizType = QuizType.Definition, IsCorrect = true, UserAnswer = word.Definition,
+                CorrectAnswer = word.Definition, AttemptedAt = PreviousReviewUtc
+            });
+            await db.SaveChangesAsync();
+        }
+        var before = await LoadLearningStatesAsync(factory, words.Select(item => item.UserWordId));
+        var resultsBefore = await LoadSessionResultsAsync(factory, start.SessionId);
+        using var response = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        await ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.Conflict,
+            "quiz_submission_conflict", "This quiz submission is already being processed or has been submitted.");
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+        Assert.Equal(resultsBefore, await LoadSessionResultsAsync(factory, start.SessionId));
+        using var repeat = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        await AssertSessionUnavailableAsync(repeat);
+    }
+
+    [Theory]
+    [InlineData("", 5)]
+    [InlineData("?take=0", 5)]
+    [InlineData("?take=-1", 5)]
+    [InlineData("?take=1", 1)]
+    [InlineData("?take=20", 20)]
+    [InlineData("?take=100", 20)]
+    public async Task HistoryPreservesDefaultBoundsOrderingAndFields(string query, int expectedCount)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "history-bounds");
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            for (var index = 0; index < 21; index++)
+                db.QuizResults.Add(new QuizResult
+                {
+                    UserId = user.User.User.Id, UserWordId = words[0].UserWordId, QuizSessionId = Guid.NewGuid(),
+                    QuizType = QuizType.Definition, IsCorrect = index % 2 == 0,
+                    UserAnswer = index % 2 == 0 ? words[0].Definition : null,
+                    CorrectAnswer = words[0].Definition, AttemptedAt = PreviousReviewUtc.AddMinutes(index)
+                });
+            await db.SaveChangesAsync();
+        }
+        using var response = await user.Client.GetAsync("/api/quiz/history" + query);
+        using var json = await JsonContractAssert.ReadSuccessAsync(response);
+        var data = JsonContractAssert.SuccessData(json.RootElement);
+        JsonContractAssert.Properties(data, "items");
+        var items = data.GetProperty("items").EnumerateArray().ToArray();
+        Assert.Equal(expectedCount, items.Length);
+        for (var index = 0; index < items.Length; index++)
+        {
+            var item = items[index];
+            JsonContractAssert.Properties(item, "attemptedAtUtc", "totalQuestions", "correctAnswers", "scorePercentage");
+            Assert.Equal(PreviousReviewUtc.AddMinutes(20 - index), item.GetProperty("attemptedAtUtc").GetDateTime());
+            Assert.Equal(1, item.GetProperty("totalQuestions").GetInt32());
+            Assert.Equal(index % 2 == 0 ? 1 : 0, item.GetProperty("correctAnswers").GetInt32());
+            Assert.Equal(index % 2 == 0 ? 100 : 0, item.GetProperty("scorePercentage").GetDouble());
+        }
+    }
+
+    [Fact]
+    public async Task EmptyHistoryIsACompleteSuccessfulEmptyCollection()
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        using var response = await user.Client.GetAsync("/api/quiz/history");
+        using var json = await JsonContractAssert.ReadSuccessAsync(response);
+        var data = JsonContractAssert.SuccessData(json.RootElement);
+        JsonContractAssert.Properties(data, "items");
+        JsonContractAssert.Property(data, "items", JsonValueKind.Array);
+        Assert.Empty(data.GetProperty("items").EnumerateArray());
+    }
+
+    [Theory]
+    [InlineData("unknown")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task UnknownModesRemainMixedAndSessionLifetimeRemainsThirtyMinutes(string mode)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        await SeedQuizVocabularyAsync(factory, user.User.User.Id, "mode-fallback");
+        var before = DateTime.UtcNow;
+        using var response = await user.Client.PostAsJsonAsync("/api/quiz/start", new StartQuizRequestDto
+        { QuestionCount = 1, Mode = mode });
+        var after = DateTime.UtcNow;
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var start = ReadData<QuizStartResponseDto>(await response.Content.ReadAsStringAsync());
+        Assert.Equal("mixed", start.Mode);
+        Assert.InRange(start.ExpiresAtUtc, before.AddMinutes(30), after.AddMinutes(30));
+        Assert.Equal(1, start.QuestionCount);
+        Assert.Single(start.Questions);
+    }
+
+    [Fact]
+    public async Task VocabularyMissingAtTransactionalRecheckReturnsConflictAndReleasesLock()
+    {
+        var recheck = new MissingQuizVocabularyAtRecheck();
+        using var factory = new VocabularyAppWebApplicationFactory
+        { AdditionalInterceptors = [recheck] };
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "transactional-recheck",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var start = await StartQuizAsync(user.Client, 2);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        recheck.Arm();
+        using var response = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        await ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.Conflict,
+            "quiz_vocabulary_changed", "Your vocabulary changed. Please start a new quiz.");
+        Assert.True(recheck.Triggered);
+        Assert.Empty(await LoadSessionResultsAsync(factory, start.SessionId));
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+        // The injected missing read is one-shot; a valid retry proves lock/tracker recovery.
+        using var retry = await user.Client.PostAsJsonAsync("/api/quiz/submit", CreateCorrectSubmission(start, words));
+        Assert.Equal(HttpStatusCode.OK, retry.StatusCode);
+        Assert.Equal(2, (await LoadSessionResultsAsync(factory, start.SessionId)).Count);
+        var after = await LoadLearningStatesAsync(factory, before.Keys);
+        foreach (var question in start.Questions)
+            AssertLearningState(after[FindSeededWord(question, words).UserWordId], 3, 6, true, PreviousCorrectUtc, true);
+    }
+
+    [Theory]
+    [InlineData("missing", false)]
+    [InlineData("empty-guid", false)]
+    [InlineData("malformed", true)]
+    public async Task InvalidSessionIdentifiersRemainSafeBadRequestsWithoutMutation(string kind, bool bindingFailure)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "invalid-session",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        var payload = new Dictionary<string, object?> { ["answers"] = Array.Empty<object>() };
+        if (kind != "missing") payload["sessionId"] = kind == "empty-guid" ? Guid.Empty.ToString() : ApiErrorContractAssert.Sentinel;
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await user.Client.PostAsync("/api/quiz/submit", content);
+        if (bindingFailure) await AssertQuizValidationAsync(response);
+        else await ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.BadRequest, "invalid_request", "The request is invalid.");
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+        using var scope = factory.Services.CreateScope();
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().QuizResults.ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData("{\"mode\":null}")]
+    public async Task NullStartBodyOrModePreservesImplicitRequiredBinding(string payload)
+    {
+        using var factory = new VocabularyAppWebApplicationFactory();
+        using var user = await ApiTestClientHelper.RegisterAndCreateAuthenticatedClientAsync(factory);
+        var words = await SeedQuizVocabularyAsync(factory, user.User.User.Id, "null-start",
+            2, 5, PreviousReviewUtc, PreviousCorrectUtc);
+        var before = await LoadLearningStatesAsync(factory, words.Select(word => word.UserWordId));
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var response = await user.Client.PostAsync("/api/quiz/start", content);
+        await AssertQuizValidationAsync(response);
+        AssertLearningStatesUnchanged(before, await LoadLearningStatesAsync(factory, before.Keys));
+        using var scope = factory.Services.CreateScope();
+        Assert.Empty(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().QuizResults.ToListAsync());
+    }
+
+    private sealed class MissingQuizVocabularyAtRecheck : DbCommandInterceptor
+    {
+        private int remainingReads;
+        public bool Triggered { get; private set; }
+        public void Arm() => remainingReads = 2;
+
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command, CommandEventData eventData, InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (remainingReads > 0 && command.CommandText.Contains("FROM \"UserWords\"", StringComparison.Ordinal)
+                && --remainingReads == 0)
+            {
+                // Preserve the relational reader/schema while making the second owned-word read empty.
+                command.CommandText = $"SELECT * FROM ({command.CommandText}) AS quiz_recheck WHERE 0 = 1";
+                Triggered = true;
+            }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private static Task AssertSessionUnavailableAsync(HttpResponseMessage response) =>
+        ApiErrorContractAssert.ApplicationAsync(response, HttpStatusCode.NotFound,
+            "quiz_session_unavailable", "This quiz session is unavailable. Please start a new quiz.");
+
+    private static async Task AssertQuizValidationAsync(HttpResponseMessage response)
+    {
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal("application/problem+json", response.Content.Headers.ContentType?.MediaType);
+        var raw = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(raw);
+        var root = json.RootElement;
+        JsonContractAssert.Properties(root, "type", "title", "status", "errors", "traceId", "success", "data", "error", "message", "code");
+        Assert.Equal(400, root.GetProperty("status").GetInt32());
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("type").GetString()));
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("title").GetString()));
+        Assert.Equal("validation_failed", root.GetProperty("code").GetString());
+        Assert.Equal("One or more request fields are invalid.", root.GetProperty("error").GetString());
+        Assert.Equal(root.GetProperty("error").GetString(), root.GetProperty("message").GetString());
+        JsonContractAssert.Property(root, "success", JsonValueKind.False);
+        JsonContractAssert.Property(root, "data", JsonValueKind.Null);
+        Assert.False(string.IsNullOrWhiteSpace(root.GetProperty("traceId").GetString()));
+        var fields = root.GetProperty("errors").EnumerateObject().ToArray();
+        Assert.NotEmpty(fields);
+        foreach (var field in fields)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(field.Name));
+            Assert.Equal(JsonValueKind.Array, field.Value.ValueKind);
+            Assert.NotEmpty(field.Value.EnumerateArray());
+            foreach (var error in field.Value.EnumerateArray())
+                Assert.False(string.IsNullOrWhiteSpace(error.GetString()));
+        }
+        Assert.DoesNotContain(ApiErrorContractAssert.Sentinel, raw);
+        Assert.DoesNotContain("Exception", raw);
+        Assert.DoesNotContain("System.", raw);
     }
 
     private static async Task<IReadOnlyList<SeededQuizWord>> SeedQuizVocabularyAsync(

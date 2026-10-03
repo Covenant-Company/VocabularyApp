@@ -1,3 +1,4 @@
+using VocabularyApp.WebApi.Models;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VocabularyApp.Data;
@@ -46,7 +47,7 @@ public sealed class CredentialConcurrencyTests : IClassFixture<RelationalDatabas
     }
 
     [Fact]
-    public async Task ChangePasswordAsyncReturnsFalseWhenCredentialsChangeConcurrently()
+    public async Task ChangePasswordAsyncReturnsConflictWhenCredentialsChangeConcurrently()
     {
         const string currentPassword = "Current password!";
         const string newerPassword = "Newer password!";
@@ -74,7 +75,7 @@ public sealed class CredentialConcurrencyTests : IClassFixture<RelationalDatabas
             controlledHasher,
             new LegacyPasswordVerifier());
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var staleContext = _fixture.CreateContext())
         {
             result = await CreateUserService(staleContext, passwordService)
@@ -84,7 +85,10 @@ public sealed class CredentialConcurrencyTests : IClassFixture<RelationalDatabas
         await using var verificationContext = _fixture.CreateContext();
         var persistedUser = await verificationContext.Users.SingleAsync(candidate => candidate.Id == userId);
 
-        Assert.False(result);
+        Assert.False(result.IsSuccess);
+        Assert.Equal(ServiceFailureType.Conflict, result.FailureType);
+        Assert.Equal("credentials_changed", result.Code);
+        Assert.False(result.Data);
         Assert.Equal(newerHash, persistedUser.PasswordHash);
         Assert.Equal(
             PasswordVerificationResult.Success,
@@ -107,7 +111,7 @@ public sealed class CredentialConcurrencyTests : IClassFixture<RelationalDatabas
         user.PasswordHash = hasher.HashPassword(user, currentPassword);
         var userId = await SeedUserAsync(user);
 
-        bool result;
+        ServiceResult<bool> result;
         await using (var context = _fixture.CreateContext())
         {
             result = await CreateUserService(context)
@@ -117,7 +121,8 @@ public sealed class CredentialConcurrencyTests : IClassFixture<RelationalDatabas
         await using var verificationContext = _fixture.CreateContext();
         var persistedUser = await verificationContext.Users.SingleAsync(candidate => candidate.Id == userId);
 
-        Assert.True(result);
+        Assert.True(result.IsSuccess);
+        Assert.True(result.Data);
         Assert.Equal(
             PasswordVerificationResult.Success,
             hasher.VerifyHashedPassword(persistedUser, persistedUser.PasswordHash, newPassword));
