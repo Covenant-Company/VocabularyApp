@@ -86,3 +86,5 @@ __pycache__/
 Docs/R2-Password-Hashing-Analysis.md
 Docs/R2-Password-Hashing-Implementation-Plan.md
 
+# Ignore generated .NET test results
+**/TestResults/
