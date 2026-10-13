@@ -28,6 +28,10 @@ public sealed class ApiContractMetadataTests
         yield return new object[] { typeof(QuizController), "StartQuiz", typeof(SuccessResponse<QuizStartResponseDto>) };
         yield return new object[] { typeof(QuizController), "SubmitQuiz", typeof(SuccessResponse<QuizSubmitResponseDto>) };
         yield return new object[] { typeof(QuizController), "GetQuizHistory", typeof(SuccessResponse<QuizHistoryResponseDto>) };
+        yield return new object[] { typeof(ReviewsController), "GetDue", typeof(SuccessResponse<ReviewDueResponseDto>) };
+        yield return new object[] { typeof(ReviewsController), "GetReviewSummary", typeof(SuccessResponse<ReviewSummaryResponseDto>) };
+        yield return new object[] { typeof(ReviewsController), "StartReview", typeof(SuccessResponse<ReviewStartResponseDto>) };
+        yield return new object[] { typeof(ReviewsController), "SubmitReview", typeof(SuccessResponse<ReviewSubmitResponseDto>) };
     }
 
     [Theory]

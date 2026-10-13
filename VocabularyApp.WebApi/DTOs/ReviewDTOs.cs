@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace VocabularyApp.WebApi.DTOs;
 
-// Phase 1 wire contracts only. No review endpoint is implemented yet.
+// Approved F6 wire contracts; scheduling and persistence remain server-authoritative.
 public class ReviewDueQueryDto
 {
     [Range(1, 100)]

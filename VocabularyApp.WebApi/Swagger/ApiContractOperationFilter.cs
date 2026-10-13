@@ -11,11 +11,15 @@ public sealed class ApiContractOperationFilter : IOperationFilter
 {
     private static readonly HashSet<string> ValidationOnly = new(StringComparer.Ordinal)
     {
-        "Login", "ChangePassword", "GetUserVocabulary", "SetFavorite", "GetQuizHistory"
+        "Login", "ChangePassword", "GetUserVocabulary", "SetFavorite", "GetQuizHistory", "GetDue", "StartReview"
     };
 
     private static readonly Dictionary<string, string> ActionErrors = new(StringComparer.Ordinal)
     {
+        ["GetDue"] = "400: validation_failed; 401: invalid_token; 503: reviews_disabled; 500: internal_error.",
+        ["GetReviewSummary"] = "401: invalid_token; 503: reviews_disabled; 500: internal_error.",
+        ["StartReview"] = "400: validation_failed; 401: invalid_token; 404: review_session_unavailable; 409: review_session_expired, review_state_changed; 503: reviews_disabled; 500: internal_error.",
+        ["SubmitReview"] = "400: invalid_review_answer, validation_failed; 401: invalid_token; 404: review_session_unavailable; 409: review_session_expired, review_state_changed, review_submission_conflict; 503: reviews_disabled; 500: internal_error.",
         ["Register"] = "400: username_taken, email_taken; 500: internal_error.",
         ["Login"] = "401: invalid_credentials; 409: credentials_changed; 500: internal_error.",
         ["GetProfile"] = "401: invalid_token; 404: user_not_found; 500: internal_error.",
@@ -36,6 +40,11 @@ public sealed class ApiContractOperationFilter : IOperationFilter
     {
         var action = context.MethodInfo.Name;
         if (!ActionErrors.TryGetValue(action, out var codes)) return;
+        if (action == "GetDue")
+        {
+            var take = operation.Parameters.FirstOrDefault(p => p.Name.Equals("take", StringComparison.OrdinalIgnoreCase));
+            if (take != null) take.Schema.Default = new OpenApiInteger(20);
+        }
 
         var anonymous = context.MethodInfo.IsDefined(typeof(AllowAnonymousAttribute), true)
             || context.MethodInfo.DeclaringType!.IsDefined(typeof(AllowAnonymousAttribute), true);

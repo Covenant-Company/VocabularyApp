@@ -8,7 +8,7 @@ namespace VocabularyApp.WebApi.Tests.Integration;
 public sealed class OpenApiContractTests
 {
     [Fact]
-    public async Task GeneratedDocumentContainsExactlyTheFourteenCurrentActionsAndSecurityOverrides()
+    public async Task GeneratedDocumentPreservesFourteenActionsAndAddsFourReviewActionsWithSecurityOverrides()
     {
         using var factory = new VocabularyAppWebApplicationFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost") });
@@ -24,7 +24,8 @@ public sealed class OpenApiContractTests
             ["/api/Words/vocabulary/add"] = "post", ["/api/Words/vocabulary"] = "get",
             ["/api/Words/vocabulary/search"] = "get", ["/api/Words/vocabulary/{userWordId}/favorite"] = "put",
             ["/api/Words/vocabulary/{userWordId}/preferred-definition"] = "put",
-            ["/api/quiz/start"] = "post", ["/api/quiz/submit"] = "post", ["/api/quiz/history"] = "get"
+            ["/api/quiz/start"] = "post", ["/api/quiz/submit"] = "post", ["/api/quiz/history"] = "get",
+            ["/api/reviews/due"] = "get", ["/api/reviews/summary"] = "get", ["/api/reviews/start"] = "post", ["/api/reviews/submit"] = "post"
         };
         var paths = root.GetProperty("paths");
         Assert.Equal(expected.Count, paths.EnumerateObject().Count());

@@ -15,7 +15,8 @@ public sealed class ApiContractSchemaFilter : ISchemaFilter
     {
         typeof(CreateUserRequest), typeof(LoginRequest), typeof(UpdateFavoriteRequestDto),
         typeof(UpdatePreferredDefinitionRequestDto), typeof(StartQuizRequestDto),
-        typeof(QuizSubmitRequestDto), typeof(QuizAnswerSubmissionDto)
+        typeof(QuizSubmitRequestDto), typeof(QuizAnswerSubmissionDto),
+        typeof(ReviewDueQueryDto), typeof(ReviewStartRequestDto), typeof(ReviewSubmitRequestDto)
     };
 
     public void Apply(OpenApiSchema schema, SchemaFilterContext context)
@@ -59,6 +60,8 @@ public sealed class ApiContractSchemaFilter : ISchemaFilter
             schema.Properties["mode"].Default = new OpenApiString("mixed");
             schema.Properties["mode"].Description = "mixed, word-to-definition or definition-to-word; unsupported text normalizes to mixed.";
         }
+        if (context.Type == typeof(ReviewStartRequestDto)) schema.Properties["questionCount"].Default = new OpenApiInteger(10);
+        if (context.Type == typeof(ReviewDueQueryDto)) schema.Properties["take"].Default = new OpenApiInteger(20);
         if (context.Type == typeof(QuizSubmitRequestDto))
         {
             schema.Required.Remove("answers");

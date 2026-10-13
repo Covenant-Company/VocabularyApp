@@ -64,6 +64,13 @@ if (builder.Environment.IsDevelopment())
 }
 
 builder.Services.AddScoped<IQuizService, QuizService>();
+builder.Services.Configure<ReviewOptions>(builder.Configuration.GetSection(ReviewOptions.SectionName));
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddDataProtection();
+builder.Services.AddSingleton<IReviewScheduler, IntervalV1ReviewScheduler>();
+builder.Services.AddScoped<ReviewStateCoordinator>();
+builder.Services.AddScoped<IReviewService, ReviewService>();
+builder.Services.AddScoped<ReviewContentChangeService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<JwtHelper>();
 builder.Services.AddSingleton<IPasswordHasher<User>, PasswordHasher<User>>();

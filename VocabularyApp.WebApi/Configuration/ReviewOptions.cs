@@ -1,6 +1,6 @@
 namespace VocabularyApp.WebApi.Configuration;
 
-/// <summary>Inactive until explicitly bound and registered in a later implementation phase.</summary>
+/// <summary>Independent runtime gates, disabled by default. The additive schema is always required.</summary>
 public sealed class ReviewOptions
 {
     public const string SectionName = "Reviews";

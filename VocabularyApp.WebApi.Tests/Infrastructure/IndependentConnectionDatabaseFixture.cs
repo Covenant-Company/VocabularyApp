@@ -9,6 +9,7 @@ public sealed class IndependentConnectionDatabaseFixture : IAsyncLifetime
 {
     private SqliteConnection? _keeper;
     private readonly string _connectionString = $"Data Source=f6-{Guid.NewGuid():N};Mode=Memory;Cache=Shared;Foreign Keys=True;Pooling=False";
+    public string ConnectionString => _connectionString;
 
     public async Task InitializeAsync()
     {

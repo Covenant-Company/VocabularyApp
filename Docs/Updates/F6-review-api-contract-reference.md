@@ -1,6 +1,6 @@
 # F6 review API contract reference — Phase 1
 
-Date: 2026-10-12. Decisions D1–D9 and P1–P5 are approved in the [implementation plan](F6-spaced-repetition-implementation-plan.md). **All endpoints below are planned, not yet implemented.** Phase 1 adds a pure scheduler, DTOs, inactive configuration options and focused unit tests. No review database schema, durable session service/controller, Angular interface or production feature exists yet.
+Date: 2026-10-12. Decisions D1–D9 and P1–P5 are approved in the [implementation plan](F6-spaced-repetition-implementation-plan.md). This reference records the approved Phase 1 contracts. **Implementation update, 2026-10-13:** all four endpoints and backend coordination are implemented in Phase 3; see [Phase 3 results](F6-phase-3-implementation-results.md) for execution evidence and pending release gates. The planned/later-phase wording below describes the original contract baseline. Angular and production activation remain outside Phase 3.
 
 ## 1. Scheduling domain contract
 

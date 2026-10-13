@@ -15,12 +15,14 @@ namespace VocabularyApp.WebApi.Services
         private readonly ApplicationDbContext _db;
         private readonly HttpClient _http;
         private readonly ILogger<WordService> _logger;
+        private readonly ReviewStateCoordinator? _reviews;
 
-        public WordService(ApplicationDbContext db, HttpClient http, ILogger<WordService> logger)
+        public WordService(ApplicationDbContext db, HttpClient http, ILogger<WordService> logger, ReviewStateCoordinator? reviews = null)
         {
             _db = db;
             _http = http;
             _logger = logger;
+            _reviews = reviews;
         }
 
         public async Task<ServiceResult<WordLookupResponse>> LookupWordAsync(string term, int? userId = null)
@@ -219,7 +221,10 @@ namespace VocabularyApp.WebApi.Services
                 "Dictionary service is temporarily unavailable. Please try again.",
                 ServiceFailureType.ServiceUnavailable, "dictionary_unavailable");
 
-        public async Task<ServiceResult<AddToVocabularyResultDto>> AddToVocabularyAsync(int userId, AddWordRequest request)
+        public Task<ServiceResult<AddToVocabularyResultDto>> AddToVocabularyAsync(int userId, AddWordRequest request) =>
+            AddToVocabularyCoreAsync(userId, request, 0);
+
+        private async Task<ServiceResult<AddToVocabularyResultDto>> AddToVocabularyCoreAsync(int userId, AddWordRequest request, int attempt)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Word))
                 return ServiceResult<AddToVocabularyResultDto>.Failure("Word is required.", ServiceFailureType.Validation, "invalid_request");
@@ -286,11 +291,17 @@ namespace VocabularyApp.WebApi.Services
                 _db.UserWords.Add(userWord);
                 try
                 {
+                    await using var transaction = _reviews?.EnrollmentEnabled == true
+                        ? await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+                    if (_reviews != null) await _reviews.EnrollAsync(userWord);
                     await _db.SaveChangesAsync();
+                    if (transaction != null) await transaction.CommitAsync();
                 }
                 catch (DbUpdateException ex) when (IsUserWordIdentityDuplicate(ex))
                 {
                     _db.Entry(userWord).State = EntityState.Detached;
+                    foreach (var state in _db.ChangeTracker.Entries<UserWordReviewState>().Where(e => e.Entity.UserWord == userWord).ToArray())
+                        state.State = EntityState.Detached;
                     var winner = await _db.UserWords
                         .AsNoTracking()
                         .FirstOrDefaultAsync(uw => uw.UserId == userId && uw.WordId == word.Id);
@@ -313,12 +324,21 @@ namespace VocabularyApp.WebApi.Services
             }
             catch (Exception ex)
             {
+                if (_reviews?.EnrollmentEnabled == true && attempt < 2 && ReviewService.Retryable(ex))
+                {
+                    _db.ChangeTracker.Clear();
+                    await Task.Delay(System.Security.Cryptography.RandomNumberGenerator.GetInt32(10, 40));
+                    return await AddToVocabularyCoreAsync(userId, request, attempt + 1);
+                }
                 _logger.LogError(ex, "Error adding word to vocabulary for user {UserId}: '{Word}'", userId, request.Word);
                 return ServiceResult<AddToVocabularyResultDto>.Failure("An internal error occurred. Please try again.", ServiceFailureType.InternalError, "internal_error");
             }
         }
 
-        public async Task<ServiceResult<PreferredDefinitionUpdateResponseDto>> SetPreferredDefinitionAsync(int userId, int userWordId, int preferredWordDefinitionId)
+        public Task<ServiceResult<PreferredDefinitionUpdateResponseDto>> SetPreferredDefinitionAsync(int userId, int userWordId, int preferredWordDefinitionId) =>
+            SetPreferredDefinitionCoreAsync(userId, userWordId, preferredWordDefinitionId, 0);
+
+        private async Task<ServiceResult<PreferredDefinitionUpdateResponseDto>> SetPreferredDefinitionCoreAsync(int userId, int userWordId, int preferredWordDefinitionId, int attempt)
         {
             try
             {
@@ -327,7 +347,18 @@ namespace VocabularyApp.WebApi.Services
                     return ServiceResult<PreferredDefinitionUpdateResponseDto>.Failure("A valid preferred definition is required.", ServiceFailureType.Validation, "invalid_preferred_definition");
                 }
 
+                await using var transaction = _reviews?.EnrollmentEnabled == true
+                    ? await _db.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable) : null;
+                // Lock canonical sources before saved-word/state reads, matching answer coordination.
+                if (transaction != null)
+                {
+                    var wordId = await _db.UserWords.AsNoTracking().Where(w => w.Id == userWordId && w.UserId == userId)
+                        .Select(w => (int?)w.WordId).SingleOrDefaultAsync();
+                    if (wordId.HasValue) await _db.WordDefinitions.Where(d => d.WordId == wordId).OrderBy(d => d.Id).LoadAsync();
+                }
+
                 var userWord = await _db.UserWords
+                    .Include(w => w.Word).ThenInclude(w => w.WordDefinitions)
                     .FirstOrDefaultAsync(uw => uw.Id == userWordId && uw.UserId == userId);
 
                 if (userWord == null)
@@ -353,9 +384,17 @@ namespace VocabularyApp.WebApi.Services
 
                 // Preferred definition is the selected meaning; POS remains synchronized
                 // compatibility state and does not move or replace UserWord identity.
+                var previousMeaning = ReviewStateCoordinator.Select(userWord)?.Id;
                 userWord.PartOfSpeechId = selectedDefinition.PartOfSpeechId;
                 userWord.PreferredWordDefinitionId = preferredWordDefinitionId;
+                if (transaction != null)
+                {
+                    var reviewState = await _db.UserWordReviewStates.SingleOrDefaultAsync(s => s.UserId == userId && s.UserWordId == userWordId);
+                    if (reviewState != null && previousMeaning != ReviewStateCoordinator.Select(userWord)?.Id)
+                        _reviews!.Reset(reviewState, userWord);
+                }
                 await _db.SaveChangesAsync();
+                if (transaction != null) await transaction.CommitAsync();
 
                 return ServiceResult<PreferredDefinitionUpdateResponseDto>.Success(new PreferredDefinitionUpdateResponseDto
                 {
@@ -363,6 +402,12 @@ namespace VocabularyApp.WebApi.Services
                     UserWordId = userWordId,
                     PreferredWordDefinitionId = preferredWordDefinitionId
                 });
+            }
+            catch (Exception ex) when (_reviews?.EnrollmentEnabled == true && attempt < 2 && ReviewService.Retryable(ex))
+            {
+                _db.ChangeTracker.Clear();
+                await Task.Delay(System.Security.Cryptography.RandomNumberGenerator.GetInt32(10, 40));
+                return await SetPreferredDefinitionCoreAsync(userId, userWordId, preferredWordDefinitionId, attempt + 1);
             }
             catch (Exception ex)
             {
@@ -623,6 +668,7 @@ namespace VocabularyApp.WebApi.Services
             return await _db.WordDefinitions
                 .Where(wd => wd.WordId == wordId && wd.PartOfSpeechId == partOfSpeechId)
                 .OrderBy(wd => wd.DisplayOrder)
+                .ThenBy(wd => wd.Id)
                 .Select(wd => (int?)wd.Id)
                 .FirstOrDefaultAsync();
         }
