@@ -43,4 +43,5 @@ public class UserWord
     public virtual PartOfSpeech PartOfSpeech { get; set; } = null!;
     public virtual WordDefinition? PreferredWordDefinition { get; set; }
     public virtual ICollection<SampleSentence> SampleSentences { get; set; } = new List<SampleSentence>();
+    public virtual UserWordReviewState? ReviewState { get; set; }
 }

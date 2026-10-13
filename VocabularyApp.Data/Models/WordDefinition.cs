@@ -19,6 +19,8 @@ public class WordDefinition
 
     public int DisplayOrder { get; set; } = 1; // For words with multiple definitions per part of speech
 
+    public long ContentRevision { get; set; } = 1;
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     // Navigation properties

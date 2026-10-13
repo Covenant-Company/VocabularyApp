@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using VocabularyApp.Data.Models;
+using VocabularyApp.Data.Configurations;
 
 namespace VocabularyApp.Data;
 
@@ -18,6 +19,10 @@ public class ApplicationDbContext : DbContext
     public DbSet<SampleSentence> SampleSentences { get; set; }
     public DbSet<QuizResult> QuizResults { get; set; }
     public DbSet<ChatHistory> ChatHistories { get; set; }
+    public DbSet<UserWordReviewState> UserWordReviewStates { get; set; } = null!;
+    public DbSet<ReviewHistory> ReviewHistories { get; set; } = null!;
+    public DbSet<ReviewSession> ReviewSessions { get; set; } = null!;
+    public DbSet<ReviewSessionItem> ReviewSessionItems { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +55,9 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<WordDefinition>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.Property(e => e.ContentRevision).HasDefaultValue(1L).IsConcurrencyToken();
+            entity.ToTable("WordDefinitions", table =>
+                table.HasCheckConstraint("CK_WordDefinitions_ContentRevision", "[ContentRevision] >= 1"));
 
 
             // Foreign key relationships
@@ -71,6 +79,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<UserWord>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.HasAlternateKey(e => new { e.UserId, e.Id });
 
 
             // Foreign key relationships
@@ -153,6 +162,11 @@ public class ApplicationDbContext : DbContext
             // Index for performance on chat retrieval
             entity.HasIndex(e => new { e.UserId, e.CreatedAt });
         });
+
+        modelBuilder.ApplyConfiguration(new UserWordReviewStateConfiguration());
+        modelBuilder.ApplyConfiguration(new ReviewSessionConfiguration());
+        modelBuilder.ApplyConfiguration(new ReviewSessionItemConfiguration());
+        modelBuilder.ApplyConfiguration(new ReviewHistoryConfiguration());
 
         // Seed initial data for PartsOfSpeech
         SeedPartsOfSpeech(modelBuilder);

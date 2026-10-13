@@ -192,6 +192,305 @@ namespace VocabularyApp.Data.Migrations
                     b.ToTable("QuizResults");
                 });
 
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AlgorithmVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("CorrectAnswer")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long>("DefinitionRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DefinitionText")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<long?>("ElapsedSincePreviousReviewTicks")
+                        .HasColumnType("bigint");
+
+                    b.Property<bool>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("NextCorrectCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NextIntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("NextLapseCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("NextReviewAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<long>("NextScheduleVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("NextStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OutcomeSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("PreviousCorrectCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PreviousIntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PreviousLapseCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("PreviousLastReviewedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<DateTime>("PreviousNextReviewAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<long>("PreviousScheduleVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("PreviousStatus")
+                        .HasColumnType("int");
+
+                    b.Property<string>("QuestionType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("ReceiptContractVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReceiptJson")
+                        .IsRequired()
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTime>("ReviewedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<string>("SelectedAnswer")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("SelectedOptionId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SessionItemId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SubmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserWordId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WordDefinitionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WordText")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionItemId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "SubmissionId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "SessionItemId", "UserWordId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "UserWordId", "ReviewedAt", "Id");
+
+                    b.ToTable("ReviewHistories", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReviewHistories_NextProgression", "[NextStatus] IN (1, 2) AND (([NextStatus] = 0 AND [NextCorrectCount] = 0 AND [NextIntervalDays] = 0) OR ([NextStatus] = 1 AND (([NextCorrectCount] = 0 AND [NextIntervalDays] = 1) OR ([NextCorrectCount] = 1 AND [NextIntervalDays] = 1) OR ([NextCorrectCount] = 2 AND [NextIntervalDays] = 3))) OR ([NextStatus] = 2 AND (([NextCorrectCount] = 3 AND [NextIntervalDays] = 7) OR ([NextCorrectCount] = 4 AND [NextIntervalDays] = 14) OR ([NextCorrectCount] = 5 AND [NextIntervalDays] = 30) OR ([NextCorrectCount] = 6 AND [NextIntervalDays] = 60) OR ([NextCorrectCount] = 7 AND [NextIntervalDays] = 90))))");
+
+                            t.HasCheckConstraint("CK_ReviewHistories_Outcome", "[SelectedOptionId] BETWEEN 0 AND 3 AND [PreviousLapseCount] >= 0 AND [NextLapseCount] >= 0 AND [QuestionType] = 'word-to-definition' AND [OutcomeSource] = 'server-multiple-choice'");
+
+                            t.HasCheckConstraint("CK_ReviewHistories_PreviousProgression", "([PreviousStatus] = 0 AND [PreviousCorrectCount] = 0 AND [PreviousIntervalDays] = 0) OR ([PreviousStatus] = 1 AND (([PreviousCorrectCount] = 0 AND [PreviousIntervalDays] = 1) OR ([PreviousCorrectCount] = 1 AND [PreviousIntervalDays] = 1) OR ([PreviousCorrectCount] = 2 AND [PreviousIntervalDays] = 3))) OR ([PreviousStatus] = 2 AND (([PreviousCorrectCount] = 3 AND [PreviousIntervalDays] = 7) OR ([PreviousCorrectCount] = 4 AND [PreviousIntervalDays] = 14) OR ([PreviousCorrectCount] = 5 AND [PreviousIntervalDays] = 30) OR ([PreviousCorrectCount] = 6 AND [PreviousIntervalDays] = 60) OR ([PreviousCorrectCount] = 7 AND [PreviousIntervalDays] = 90)))");
+
+                            t.HasCheckConstraint("CK_ReviewHistories_Timestamps", "[ReviewedAt] >= [PreviousNextReviewAt] AND [NextReviewAt] > [ReviewedAt] AND (([PreviousStatus] = 0 AND [PreviousLastReviewedAt] IS NULL AND [ElapsedSincePreviousReviewTicks] IS NULL) OR ([PreviousStatus] <> 0 AND [PreviousLastReviewedAt] IS NOT NULL AND [PreviousLastReviewedAt] <= [ReviewedAt] AND [ElapsedSincePreviousReviewTicks] IS NOT NULL AND [ElapsedSincePreviousReviewTicks] >= 0))");
+
+                            t.HasCheckConstraint("CK_ReviewHistories_Versions", "[PreviousScheduleVersion] >= 1 AND [PreviousScheduleVersion] < 9223372036854775807 AND [NextScheduleVersion] = [PreviousScheduleVersion] + 1 AND [DefinitionRevision] >= 1 AND [ReceiptContractVersion] = 1 AND [AlgorithmVersion] = 'interval-v1'");
+                        });
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSession", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<int>("ItemCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RequestedQuestionCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "ExpiresAt", "Id");
+
+                    b.ToTable("ReviewSessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReviewSessions_Counts", "[RequestedQuestionCount] BETWEEN 1 AND 20 AND [ItemCount] BETWEEN 1 AND [RequestedQuestionCount]");
+
+                            t.HasCheckConstraint("CK_ReviewSessions_Timestamps", "[ExpiresAt] > [CreatedAt] AND ([CompletedAt] IS NULL OR [CompletedAt] >= [CreatedAt])");
+
+                            t.HasCheckConstraint("CK_ReviewSessions_Version", "[Version] >= 1");
+                        });
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSessionItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime?>("AcceptedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<Guid?>("AcceptedSubmissionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("CapturedScheduleVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CorrectOptionId")
+                        .HasColumnType("int");
+
+                    b.Property<long>("DefinitionRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("DefinitionText")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool?>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("OptionsJson")
+                        .IsRequired()
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Ordinal")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PartOfSpeech")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Prompt")
+                        .IsRequired()
+                        .HasMaxLength(1500)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(1500)");
+
+                    b.Property<string>("QuestionType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int?>("ReceiptContractVersion")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReceiptJson")
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("SelectedOptionId")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SessionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserWordId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WordDefinitionId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("WordText")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SessionId", "Ordinal")
+                        .IsUnique();
+
+                    b.HasIndex("SessionId", "UserWordId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "AcceptedSubmissionId")
+                        .IsUnique()
+                        .HasFilter("[AcceptedSubmissionId] IS NOT NULL");
+
+                    b.HasIndex("UserId", "SessionId");
+
+                    b.HasIndex("UserId", "UserWordId", "AcceptedAt");
+
+                    b.ToTable("ReviewSessionItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ReviewSessionItems_Acceptance", "([AcceptedSubmissionId] IS NULL AND [AcceptedAt] IS NULL AND [SelectedOptionId] IS NULL AND [IsCorrect] IS NULL AND [ReceiptJson] IS NULL AND [ReceiptContractVersion] IS NULL) OR ([AcceptedSubmissionId] IS NOT NULL AND [AcceptedAt] IS NOT NULL AND [SelectedOptionId] IS NOT NULL AND [SelectedOptionId] BETWEEN 0 AND 3 AND [IsCorrect] IS NOT NULL AND [ReceiptJson] IS NOT NULL AND [ReceiptContractVersion] IS NOT NULL AND [ReceiptContractVersion] = 1)");
+
+                            t.HasCheckConstraint("CK_ReviewSessionItems_Question", "[Ordinal] BETWEEN 0 AND 19 AND [CapturedScheduleVersion] >= 1 AND [DefinitionRevision] >= 1 AND [CorrectOptionId] BETWEEN 0 AND 3 AND [QuestionType] = 'word-to-definition'");
+                        });
+                });
+
             modelBuilder.Entity("VocabularyApp.Data.Models.SampleSentence", b =>
                 {
                     b.Property<int>("Id")
@@ -323,6 +622,72 @@ namespace VocabularyApp.Data.Migrations
                     b.ToTable("UserWords");
                 });
 
+            modelBuilder.Entity("VocabularyApp.Data.Models.UserWordReviewState", b =>
+                {
+                    b.Property<int>("UserWordId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AlgorithmVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .IsUnicode(true)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<int>("ConsecutiveCorrectCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("EnrollmentAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<int>("LapseCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("LastReviewedAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<DateTime>("NextReviewAt")
+                        .HasColumnType("datetime2(7)");
+
+                    b.Property<int>("ReviewIntervalDays")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReviewStatus")
+                        .HasColumnType("int");
+
+                    b.Property<long>("ScheduleVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.Property<long?>("ScheduledDefinitionRevision")
+                        .HasColumnType("bigint");
+
+                    b.Property<int?>("ScheduledWordDefinitionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("UserWordId");
+
+                    b.HasIndex("ScheduledWordDefinitionId");
+
+                    b.HasIndex("UserId", "UserWordId")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "NextReviewAt", "UserWordId");
+
+                    b.ToTable("UserWordReviewStates", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_UserWordReviewStates_Meaning", "([ScheduledWordDefinitionId] IS NULL AND [ScheduledDefinitionRevision] IS NULL) OR ([ScheduledWordDefinitionId] IS NOT NULL AND [ScheduledDefinitionRevision] IS NOT NULL AND [ScheduledDefinitionRevision] >= 1)");
+
+                            t.HasCheckConstraint("CK_UserWordReviewStates_Progression", "([ReviewStatus] = 0 AND [ConsecutiveCorrectCount] = 0 AND [ReviewIntervalDays] = 0) OR ([ReviewStatus] = 1 AND (([ConsecutiveCorrectCount] = 0 AND [ReviewIntervalDays] = 1) OR ([ConsecutiveCorrectCount] = 1 AND [ReviewIntervalDays] = 1) OR ([ConsecutiveCorrectCount] = 2 AND [ReviewIntervalDays] = 3))) OR ([ReviewStatus] = 2 AND (([ConsecutiveCorrectCount] = 3 AND [ReviewIntervalDays] = 7) OR ([ConsecutiveCorrectCount] = 4 AND [ReviewIntervalDays] = 14) OR ([ConsecutiveCorrectCount] = 5 AND [ReviewIntervalDays] = 30) OR ([ConsecutiveCorrectCount] = 6 AND [ReviewIntervalDays] = 60) OR ([ConsecutiveCorrectCount] = 7 AND [ReviewIntervalDays] = 90)))");
+
+                            t.HasCheckConstraint("CK_UserWordReviewStates_Timestamps", "[NextReviewAt] >= [EnrollmentAt] AND (([ReviewStatus] = 0 AND [LastReviewedAt] IS NULL) OR ([ReviewStatus] <> 0 AND [LastReviewedAt] IS NOT NULL AND [LastReviewedAt] >= [EnrollmentAt] AND [NextReviewAt] > [LastReviewedAt]))");
+
+                            t.HasCheckConstraint("CK_UserWordReviewStates_Versions", "[ScheduleVersion] >= 1 AND [LapseCount] >= 0 AND [AlgorithmVersion] = 'interval-v1'");
+                        });
+                });
+
             modelBuilder.Entity("VocabularyApp.Data.Models.Word", b =>
                 {
                     b.Property<int>("Id")
@@ -366,6 +731,12 @@ namespace VocabularyApp.Data.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
+                    b.Property<long>("ContentRevision")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L);
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
@@ -394,7 +765,10 @@ namespace VocabularyApp.Data.Migrations
                     b.HasIndex("WordId", "PartOfSpeechId", "DisplayOrder")
                         .IsUnique();
 
-                    b.ToTable("WordDefinitions");
+                    b.ToTable("WordDefinitions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WordDefinitions_ContentRevision", "[ContentRevision] >= 1");
+                        });
                 });
 
             modelBuilder.Entity("VocabularyApp.Data.Models.ChatHistory", b =>
@@ -423,6 +797,59 @@ namespace VocabularyApp.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+
+                    b.Navigation("UserWord");
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewHistory", b =>
+                {
+                    b.HasOne("VocabularyApp.Data.Models.UserWord", "UserWord")
+                        .WithMany()
+                        .HasForeignKey("UserId", "UserWordId")
+                        .HasPrincipalKey("UserId", "Id")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("VocabularyApp.Data.Models.ReviewSessionItem", "SessionItem")
+                        .WithOne("History")
+                        .HasForeignKey("VocabularyApp.Data.Models.ReviewHistory", "UserId", "SessionItemId", "UserWordId")
+                        .HasPrincipalKey("VocabularyApp.Data.Models.ReviewSessionItem", "UserId", "Id", "UserWordId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("SessionItem");
+
+                    b.Navigation("UserWord");
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSession", b =>
+                {
+                    b.HasOne("VocabularyApp.Data.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSessionItem", b =>
+                {
+                    b.HasOne("VocabularyApp.Data.Models.ReviewSession", "Session")
+                        .WithMany("Items")
+                        .HasForeignKey("UserId", "SessionId")
+                        .HasPrincipalKey("UserId", "Id")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("VocabularyApp.Data.Models.UserWord", "UserWord")
+                        .WithMany()
+                        .HasForeignKey("UserId", "UserWordId")
+                        .HasPrincipalKey("UserId", "Id")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.Navigation("Session");
 
                     b.Navigation("UserWord");
                 });
@@ -480,6 +907,25 @@ namespace VocabularyApp.Data.Migrations
                     b.Navigation("Word");
                 });
 
+            modelBuilder.Entity("VocabularyApp.Data.Models.UserWordReviewState", b =>
+                {
+                    b.HasOne("VocabularyApp.Data.Models.WordDefinition", "ScheduledWordDefinition")
+                        .WithMany()
+                        .HasForeignKey("ScheduledWordDefinitionId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("VocabularyApp.Data.Models.UserWord", "UserWord")
+                        .WithOne("ReviewState")
+                        .HasForeignKey("VocabularyApp.Data.Models.UserWordReviewState", "UserId", "UserWordId")
+                        .HasPrincipalKey("VocabularyApp.Data.Models.UserWord", "UserId", "Id")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("ScheduledWordDefinition");
+
+                    b.Navigation("UserWord");
+                });
+
             modelBuilder.Entity("VocabularyApp.Data.Models.WordDefinition", b =>
                 {
                     b.HasOne("VocabularyApp.Data.Models.PartOfSpeech", "PartOfSpeech")
@@ -506,6 +952,16 @@ namespace VocabularyApp.Data.Migrations
                     b.Navigation("WordDefinitions");
                 });
 
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSession", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("VocabularyApp.Data.Models.ReviewSessionItem", b =>
+                {
+                    b.Navigation("History");
+                });
+
             modelBuilder.Entity("VocabularyApp.Data.Models.User", b =>
                 {
                     b.Navigation("ChatHistories");
@@ -519,6 +975,8 @@ namespace VocabularyApp.Data.Migrations
 
             modelBuilder.Entity("VocabularyApp.Data.Models.UserWord", b =>
                 {
+                    b.Navigation("ReviewState");
+
                     b.Navigation("SampleSentences");
                 });
 
