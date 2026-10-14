@@ -188,4 +188,15 @@ describe('ReviewSessionComponent', () => {
     start(); expect(component.session!.expiresAtUtc).toBe('2026-10-13T12:30:00Z');
     component.selectOption(0); component.submitAnswer(); flushAccepted(); expect(component.currentReceipt).not.toBeNull();
   });
+  it('keeps long words and definitions contained and interactive targets at least 44px high', () => {
+    start(); fixture.nativeElement.style.width = '320px';
+    component.currentItem!.prompt = "What is the meaning of '" + 'w'.repeat(100) + "'?";
+    component.currentItem!.options[0].text = 'd'.repeat(1000); fixture.detectChanges();
+    const page = fixture.nativeElement.querySelector('.review-page') as HTMLElement;
+    expect(page.scrollWidth).toBeLessThanOrEqual(page.clientWidth + 1);
+    const controls = fixture.nativeElement.querySelectorAll('button, .nav-link, .option') as NodeListOf<HTMLElement>;
+    Array.from(controls).forEach(control => expect(control.getBoundingClientRect().height).toBeGreaterThanOrEqual(44));
+    const radio = fixture.nativeElement.querySelector('input[type=radio]') as HTMLInputElement;
+    radio.focus(); expect(document.activeElement).toBe(radio); expect(getComputedStyle(radio.closest('.option')!).outlineStyle).not.toBe('none');
+  });
 });
