@@ -1,17 +1,26 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, DestroyRef, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ReviewService } from '../../services/review.service';
+import { ReviewSummaryResponse } from '../../models/review.model';
+import { normalizeApiError } from '../../services/api-error';
 import { AuthService } from '../../services/auth.service';
 import { User } from '../../models/user.model';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, RouterLink],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss'
 })
 export class DashboardComponent implements OnInit {
+  private readonly destroyRef = inject(DestroyRef);
+  reviewSummary: ReviewSummaryResponse | null = null;
+  reviewSummaryLoading = false;
+  reviewSummaryError = '';
+  reviewsDisabled = false;
   currentUser: User | null = null;
 
   dashboardCards = [
@@ -51,15 +60,21 @@ export class DashboardComponent implements OnInit {
 
   constructor(
     private authService: AuthService,
-    private router: Router
+    private router: Router,
+    private reviews: ReviewService
   ) { }
 
   ngOnInit(): void {
     // Subscribe to current user
-    this.authService.currentUser$.subscribe(user => {
+    this.authService.currentUser$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(user => {
+      if (this.currentUser?.id !== user?.id) {
+        this.reviewSummary = null; this.reviewSummaryLoading = false; this.reviewSummaryError = ''; this.reviewsDisabled = false;
+      }
       this.currentUser = user;
       if (!user) {
         this.router.navigate(['/login']);
+      } else if (this.authService.isAuthenticated()) {
+        this.loadReviewSummary();
       }
     });
 
@@ -68,6 +83,19 @@ export class DashboardComponent implements OnInit {
       this.router.navigate(['/login']);
       return;
     }
+  }
+
+  loadReviewSummary(): void {
+    if (this.reviewSummaryLoading) return;
+    this.reviewSummaryLoading = true; this.reviewSummaryError = '';
+    this.reviews.summary().pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: summary => { this.reviewSummary = summary; this.reviewSummaryLoading = false; this.reviewsDisabled = false; },
+      error: error => {
+        const failure = normalizeApiError(error, 'review-summary', 'Unable to load review counts.');
+        this.reviewSummaryError = failure.message; this.reviewsDisabled = failure.code === 'reviews_disabled';
+        this.reviewSummaryLoading = false;
+      }
+    });
   }
 
   onCardClick(card: any): void {

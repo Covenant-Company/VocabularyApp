@@ -13,5 +13,6 @@ export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent, canActivate: [authGuard] },
   { path: 'vocabulary', component: WordLookupComponent, canActivate: [authGuard] },
   { path: 'quiz', component: QuizComponent, canActivate: [authGuard] },
+  { path: 'reviews', loadComponent: () => import('./components/review-session/review-session.component').then(m => m.ReviewSessionComponent), canActivate: [authGuard] },
   { path: '**', redirectTo: '/login' }
 ];

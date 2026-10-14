@@ -1,4 +1,36 @@
 import { QuizStartResponse, QuizSubmitResponse, QuizHistoryResponse } from '../models/quiz.model';
+import { ReviewDueResponse, ReviewStartResponse, ReviewSubmitResponse, ReviewSummaryResponse } from '../models/review.model';
+
+export function currentReviewSuccess(): {
+  summary: { success: true; data: ReviewSummaryResponse };
+  due: { success: true; data: ReviewDueResponse };
+  start: { success: true; data: ReviewStartResponse };
+  submit: { success: true; data: ReviewSubmitResponse };
+} {
+  const sessionId = '10000000-0000-0000-0000-000000000001';
+  const itemId = '20000000-0000-0000-0000-000000000001';
+  const sessionSummary = { totalItems: 2, acceptedCount: 0, correctCount: 0, incorrectCount: 0, pendingCount: 2, isComplete: false };
+  return {
+    summary: { success: true, data: { dueCount: 2, newCount: 2, overdueCount: 1, blockedCount: 1, usableDueCount: 1,
+      totalEnrolledCount: 4, nextReviewAt: '2026-10-14T12:00:00Z', asOfUtc: '2026-10-13T12:00:00Z' } },
+    due: { success: true, data: { items: [{ userWordId: 7, word: 'test', nextReviewAt: '2026-10-13T12:00:00Z', reviewStatus: 'new', isUsable: true },
+      { userWordId: 8, word: 'blocked', nextReviewAt: '2026-10-13T12:00:00Z', reviewStatus: 'new', isUsable: false }],
+      nextCursor: null, asOfUtc: '2026-10-13T12:00:00Z' } },
+    start: { success: true, data: { availability: 'ready', reason: null, sessionId, expiresAtUtc: '2026-10-13T12:30:00Z', sessionSummary,
+      items: [1, 2].map((ordinal) => ({ itemId: `20000000-0000-0000-0000-00000000000${ordinal}`, userWordId: ordinal + 6,
+        questionType: 'word-to-definition', prompt: `What is the meaning of '${ordinal === 1 ? 'test' : 'fruit'}'?`, acceptedReceipt: null,
+        options: [{ optionId: 0, text: 'A trial' }, { optionId: 1, text: 'A fruit' }, { optionId: 2, text: 'A vehicle' }, { optionId: 3, text: 'A building' }] })) } },
+    submit: { success: true, data: { sessionId, itemId, submissionId: '30000000-0000-0000-0000-000000000001', reviewedAtUtc: '2026-10-13T12:01:00Z',
+      isCorrect: true, selectedOptionId: 0, correctOptionId: 0, selectedAnswer: 'A trial', correctAnswer: 'A trial',
+      nextReviewAt: '2026-10-14T12:01:00Z', reviewIntervalDays: 1, reviewStatus: 'learning',
+      sessionSummary: { totalItems: 2, acceptedCount: 1, correctCount: 1, incorrectCount: 0, pendingCount: 1, isComplete: false } } }
+  };
+}
+
+export function reviewApplicationFailure(code: string) {
+  // Diagnostic text must never leak into normalized failures.
+  return { success: false, data: null, error: 'System.Exception SECRET', message: 'SECRET', code, traceId: 'review-test-trace' };
+}
 
 // Test-only wire fixtures reviewed against backend DTOs/controllers and
 // ApiContractShapeTests. Do not cast these to the currently mismatched UI models.

@@ -2,7 +2,8 @@ import { HttpErrorResponse } from '@angular/common/http';
 
 export type ApiOperation = 'login' | 'register' | 'password-change' | 'lookup'
   | 'vocabulary-add' | 'vocabulary-list' | 'vocabulary-search' | 'favorite'
-  | 'preferred-definition' | 'quiz-start' | 'quiz-submit' | 'quiz-history';
+  | 'preferred-definition' | 'quiz-start' | 'quiz-submit' | 'quiz-history'
+  | 'review-due' | 'review-summary' | 'review-start' | 'review-submit';
 
 export interface ApiError {
   message: string;
@@ -18,6 +19,12 @@ const WORD_NOT_FOUND = 'Word not found. Please check the spelling and try again.
 const VOCABULARY_UNAVAILABLE = 'This word is unavailable in your vocabulary.';
 
 const codeMessages: Readonly<Record<string, string>> = {
+  reviews_disabled: 'Vocabulary reviews are not available right now.',
+  invalid_review_answer: 'The selected answer is not valid for this review item.',
+  review_session_unavailable: 'This review session is unavailable. Please start a new review.',
+  review_session_expired: 'This review session has expired. Please start a new review.',
+  review_state_changed: 'Your review content or schedule changed. Please start a new review.',
+  review_submission_conflict: 'This submission key or review item has already been used for a different answer.',
   internal_error: INTERNAL_ERROR,
   dictionary_unavailable: DICTIONARY_UNAVAILABLE,
   invalid_credentials: 'Invalid username or password',
@@ -59,7 +66,8 @@ function validationFields(value: unknown): Record<string, string[]> | undefined 
   // Only known field names and exact annotation messages can be forwarded.
   // Binding messages often embed attempted secrets or CLR names: replace them.
   const fields = ['Username', 'Email', 'Password', 'CurrentPassword', 'NewPassword', 'Word',
-    'PreferredWordDefinitionId', 'IsFavorite', 'SessionId', 'Answers', 'QuestionId', 'SelectedOptionId'];
+    'PreferredWordDefinitionId', 'IsFavorite', 'SessionId', 'Answers', 'QuestionId', 'SelectedOptionId',
+    'ItemId', 'SubmissionId', 'ResumeSessionId', 'QuestionCount', 'Take', 'Cursor'];
   for (const field of fields) {
     const messages = value[field] ?? value[field[0].toLowerCase() + field.slice(1)];
     if (!Array.isArray(messages) || !messages.length) continue;
@@ -82,6 +90,9 @@ export function normalizeApiError(input: unknown, operation: ApiOperation, fallb
   const status = http?.status ?? (typeof rawStatus === 'number' ? rawStatus : undefined);
   if (status === 0) return { message: 'Unable to connect. Please check your connection and try again.' };
   if (status !== undefined && status >= 500) {
+    const body: unknown = http?.error ?? inputRecord?.['error'];
+    if (status === 503 && operation.startsWith('review-') && record(body) && body['code'] === 'reviews_disabled')
+      return { message: codeMessages['reviews_disabled'], code: 'reviews_disabled' };
     return { message: status === 503 && operation === 'lookup' ? DICTIONARY_UNAVAILABLE : INTERNAL_ERROR };
   }
   // A 200 contract failure is not a business error with trusted server text.

@@ -13,6 +13,17 @@
   </header>
 
   <main class="container mx-auto px-6 py-12">
+    <section aria-labelledby="dashboard-review-heading" class="max-w-4xl mx-auto mb-8 bg-white rounded-2xl p-6 shadow-xl">
+      <h2 id="dashboard-review-heading" class="text-xl font-bold text-gray-800 mb-3">Vocabulary reviews</h2>
+      <p *ngIf="reviewSummaryLoading" role="status">Loading review counts…</p>
+      <p *ngIf="reviewSummaryError" role="status" class="text-gray-800">{{ reviewSummaryError }}</p>
+      <ng-container *ngIf="reviewSummary && !reviewSummaryError">
+        <p class="text-gray-800">{{ reviewSummary.dueCount }} due reviews · {{ reviewSummary.overdueCount }} overdue · {{ reviewSummary.newCount }} new</p>
+        <p *ngIf="reviewSummary.blockedCount" class="text-gray-800">{{ reviewSummary.blockedCount }} due words need a usable selected meaning.</p>
+      </ng-container>
+      <a *ngIf="!reviewsDisabled" routerLink="/reviews" class="inline-flex items-center min-h-11 mt-4 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Review Vocabulary</a>
+      <button *ngIf="reviewSummaryError" type="button" (click)="loadReviewSummary()" [disabled]="reviewSummaryLoading" class="min-h-11 mt-4 ml-2 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">Retry review counts</button>
+    </section>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
       <div *ngFor="let card of dashboardCards"
         class="bg-white rounded-2xl p-8 shadow-xl transition-all duration-300 transform hover:-translate-y-2 hover:shadow-2xl"

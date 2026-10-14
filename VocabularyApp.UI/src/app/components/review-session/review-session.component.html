@@ -1,0 +1,98 @@
+<div class="min-h-screen bg-gradient-to-br from-primary-500 to-secondary-500 review-page">
+  <div class="max-w-4xl mx-auto">
+    <header class="review-header bg-primary-700 p-4 rounded-xl">
+      <div><h1 class="text-3xl font-bold text-white">Review Vocabulary</h1><p class="text-white">Practice your saved meanings with spaced repetition.</p></div>
+      <a routerLink="/dashboard" class="nav-link">Back to dashboard</a>
+    </header>
+    <main class="bg-white rounded-2xl p-5 sm:p-8 shadow-xl">
+      <div *ngIf="disabled" class="notice"><p role="status">Vocabulary reviews are not available right now. Your due count is unavailable.</p><button type="button" (click)="refreshOverview()" [disabled]="summaryLoading || dueLoading || sessionLoading || submitting">Check review availability</button></div>
+      <p *ngIf="authenticationRequired" role="alert">Please <a routerLink="/login">sign in</a> to continue. Your pending answer will be retried after you sign in to this account.</p>
+      <div role="status" aria-live="polite" aria-atomic="true"><p *ngIf="sessionLoading || submitting">{{ submitting ? 'Submitting your saved answer…' : 'Loading your review…' }}</p></div>
+      <div *ngIf="sessionError" role="alert" class="error"><p>{{ sessionError }}</p>
+        <p *ngIf="reviews.recovery.pending">Your original answer is saved. Retry it to confirm the result before continuing.</p>
+      </div>
+      <button *ngIf="reviews.recovery.pending && !authenticationRequired" type="button" (click)="recoverSession()" [disabled]="submitting || sessionLoading || disabled">Retry saved answer</button>
+      <p *ngIf="recoveredReceipt && (!currentReceipt || view !== 'session')" class="notice" role="status">Your saved answer was accepted: {{ recoveredReceipt.isCorrect ? 'Correct' : 'Incorrect' }}. Correct answer: {{ recoveredReceipt.correctAnswer }}</p>
+
+      <section *ngIf="view === 'landing'" aria-labelledby="overview-heading">
+        <h2 id="overview-heading" class="text-2xl font-bold">Your review overview</h2>
+        <p *ngIf="summaryLoading" role="status">Loading review counts…</p>
+        <div *ngIf="summaryError && !disabled" role="alert" class="error">{{ summaryError }} <button type="button" (click)="loadSummary()" [disabled]="summaryLoading">Retry counts</button></div>
+        <ng-container *ngIf="summary && !summaryError && !disabled">
+          <dl class="count-grid">
+            <div><dt>Due reviews</dt><dd>{{ summary.dueCount }}</dd></div>
+            <div><dt>New review words</dt><dd>{{ summary.newCount }}</dd></div>
+            <div><dt>Overdue reviews</dt><dd>{{ summary.overdueCount }}</dd></div>
+            <div><dt>Blocked due words</dt><dd>{{ summary.blockedCount }}</dd></div>
+            <div><dt>Usable due words</dt><dd>{{ summary.usableDueCount }}</dd></div>
+            <div><dt>Total enrolled words</dt><dd>{{ summary.totalEnrolledCount }}</dd></div>
+          </dl>
+          <p>New, overdue and blocked counts overlap with due reviews; they are not additional totals.</p>
+          <p *ngIf="summary.totalEnrolledCount === 0">No words are enrolled for reviews yet. Save words in <a routerLink="/vocabulary">My Words</a>. Existing saved words may be waiting for review enrollment.</p>
+          <p *ngIf="summary.totalEnrolledCount > 0 && summary.dueCount === 0">No reviews are due right now.</p>
+          <p *ngIf="summary.blockedCount > 0" class="notice">Some due words need a usable selected meaning. Check their preferred definitions in <a routerLink="/vocabulary">My Words</a>.</p>
+          <p *ngIf="summary.nextReviewAt">Next scheduled review: {{ summary.nextReviewAt | date:'medium' }} (your local time).</p>
+        </ng-container>
+        <p *ngIf="availabilityMessage" role="status" class="notice">{{ availabilityMessage }}</p>
+        <div class="actions" *ngIf="!disabled && !authenticationRequired">
+          <ng-container *ngIf="!reviews.recovery.sessionId && !reviews.recovery.pending">
+            <label for="review-count">Questions (1–20)<input id="review-count" type="number" min="1" max="20" [(ngModel)]="questionCount" /></label>
+            <button type="button" (click)="startSession()" [disabled]="sessionLoading || submitting || summaryLoading || !summary || !!summaryError || summary.dueCount === 0">Start review</button>
+          </ng-container>
+          <button *ngIf="reviews.recovery.sessionId && !reviews.recovery.pending && !terminal" type="button" (click)="recoverSession()" [disabled]="sessionLoading || submitting">Resume saved review</button>
+          <button *ngIf="reviews.recovery.sessionId && !reviews.recovery.pending" type="button" (click)="startNewSession()" [disabled]="sessionLoading || submitting">{{ terminal ? 'Start a new review' : 'Leave saved session and start a new review' }}</button>
+        </div>
+        <section *ngIf="!disabled" aria-labelledby="backlog-heading" class="backlog">
+          <h2 id="backlog-heading" class="text-xl font-bold">Due vocabulary</h2>
+          <p *ngIf="dueAsOf">Due as of {{ dueAsOf | date:'medium' }} (your local time).</p>
+          <ul><li *ngFor="let item of dueItems"><div><strong>{{ item.word || 'Word unavailable' }}</strong> — {{ item.reviewStatus | titlecase }}<span *ngIf="!item.isUsable" class="blocked">Blocked: selected meaning unavailable</span></div><time [attr.datetime]="item.nextReviewAt">Due {{ item.nextReviewAt | date:'medium' }} (your local time)</time></li></ul>
+          <p *ngIf="dueLoaded && dueItems.length === 0">No due vocabulary in this list.</p>
+          <p *ngIf="dueLoading" role="status">Loading due vocabulary…</p>
+          <p *ngIf="dueError" role="alert" class="error">{{ dueError }}</p>
+          <button *ngIf="cursorExpired" type="button" (click)="refreshDue()" [disabled]="dueLoading">Refresh backlog</button>
+          <button *ngIf="dueError && !cursorExpired" type="button" (click)="loadDue()" [disabled]="dueLoading">Retry backlog page</button>
+          <button *ngIf="nextCursor && !cursorExpired && !dueError" type="button" (click)="loadDue()" [disabled]="dueLoading">Load more due words</button>
+          <p *ngIf="dueLoaded && !nextCursor && !dueError" role="status">All currently due words have been loaded.</p>
+        </section>
+      </section>
+
+      <section *ngIf="view === 'session' && session" aria-label="Review question">
+        <p *ngIf="progress">Accepted {{ progress.acceptedCount }} of {{ progress.totalItems }} • {{ progress.pendingCount }} pending</p>
+        <progress *ngIf="progress" [value]="progress.acceptedCount" [max]="progress.totalItems" aria-label="Accepted review answers"></progress>
+        <p>Session expires {{ session.expiresAtUtc | date:'medium' }} (your local time).</p>
+        <h2 #questionHeading tabindex="-1" class="text-2xl font-bold question">{{ currentItem?.prompt }}</h2>
+        <form (submit)="submitAnswer(); $event.preventDefault()">
+          <fieldset [disabled]="locked || !!currentReceipt">
+            <legend>Select the definition</legend>
+            <label class="option" *ngFor="let option of currentItem?.options" [class.selected]="selection === option.optionId">
+              <input type="radio" name="review-option" [value]="option.optionId" [checked]="selection === option.optionId" (change)="selectOption(option.optionId)" />
+              <span>{{ option.text }}</span>
+            </label>
+          </fieldset>
+          <button *ngIf="!currentReceipt" type="submit" [disabled]="locked || selection === null">{{ submitting ? 'Submitting…' : 'Submit answer' }}</button>
+        </form>
+        <section role="status" aria-live="polite" aria-atomic="true" class="feedback">
+          <ng-container *ngIf="currentReceipt as receipt">
+            <h3 class="text-xl font-bold">{{ receipt.isCorrect ? 'Correct' : 'Incorrect' }}</h3>
+            <p>Your answer: {{ receipt.selectedAnswer }}</p><p>Correct answer: {{ receipt.correctAnswer }}</p>
+            <p>Next review: {{ receipt.nextReviewAt | date:'medium' }} (your local time), in {{ receipt.reviewIntervalDays }} {{ receipt.reviewIntervalDays === 1 ? 'day' : 'days' }}. Status: {{ receipt.reviewStatus | titlecase }}.</p>
+          </ng-container>
+        </section>
+        <div class="actions">
+          <button *ngIf="currentReceipt && !terminal" type="button" (click)="nextQuestion()" [disabled]="locked">{{ progress?.isComplete ? 'View completion' : 'Next question' }}</button>
+          <button type="button" class="secondary" (click)="overview()" [disabled]="submitting || sessionLoading">Return to review overview</button>
+          <button *ngIf="terminal && !reviews.recovery.pending" type="button" (click)="startNewSession()" [disabled]="disabled || authenticationRequired">Start a new review</button>
+        </div>
+      </section>
+
+      <section *ngIf="view === 'complete' && completion" aria-labelledby="complete-heading">
+        <h2 id="complete-heading" class="text-2xl font-bold">Review complete</h2>
+        <p role="status">{{ completion.acceptedCount }} of {{ completion.totalItems }} answers accepted.</p>
+        <dl class="count-grid"><div><dt>Correct</dt><dd>{{ completion.correctCount }}</dd></div><div><dt>Incorrect</dt><dd>{{ completion.incorrectCount }}</dd></div><div><dt>Pending</dt><dd>{{ completion.pendingCount }}</dd></div></dl>
+        <p>Accepted reviews have been saved. Ordinary quiz statistics are separate.</p>
+        <button type="button" (click)="overview()">Back to review overview</button>
+      </section>
+      <details *ngIf="acceptedItems.length" class="accepted-history"><summary>Accepted answers in this session ({{ acceptedItems.length }})</summary><ul><li *ngFor="let item of acceptedItems"><strong>{{ item.prompt }}</strong><p>{{ item.acceptedReceipt!.isCorrect ? 'Correct' : 'Incorrect' }}. Correct answer: {{ item.acceptedReceipt!.correctAnswer }}</p></li></ul></details>
+    </main>
+  </div>
+</div>

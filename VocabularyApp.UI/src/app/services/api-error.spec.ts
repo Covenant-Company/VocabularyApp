@@ -2,6 +2,18 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ApiOperation, DICTIONARY_UNAVAILABLE, INTERNAL_ERROR, normalizeApiError } from './api-error';
 
 describe('normalizeApiError', () => {
+  it('recognizes review disablement only for review 503 responses and preserves existing 503 handling', () => {
+    const body = { code: 'reviews_disabled', error: 'SECRET', message: 'SECRET' };
+    const error = new HttpErrorResponse({ status: 503, error: body });
+    expect(normalizeApiError(error, 'review-summary', 'Fallback')).toEqual({ message: 'Vocabulary reviews are not available right now.', code: 'reviews_disabled' });
+    expect(normalizeApiError(error, 'quiz-start', 'Fallback').message).toBe(INTERNAL_ERROR);
+    expect(normalizeApiError(error, 'lookup', 'Fallback').message).toBe(DICTIONARY_UNAVAILABLE);
+    expect(normalizeApiError(new HttpErrorResponse({ status: 500, error: body }), 'review-submit', 'Fallback').message).toBe(INTERNAL_ERROR);
+  });
+  it('sanitizes review validation fields and never shows binding diagnostics', () => {
+    const error = new HttpErrorResponse({ status: 400, error: { code: 'validation_failed', errors: { SubmissionId: ['SECRET'], Cursor: ['SECRET'], SelectedOptionId: ['SECRET'] } } });
+    expect(normalizeApiError(error, 'review-submit', 'Fallback').fieldErrors).toEqual({ SubmissionId: ['Invalid value.'], Cursor: ['Invalid value.'], SelectedOptionId: ['Invalid value.'] });
+  });
   const fallback = 'Please try the operation again.';
   function normalize(body: unknown, status = 400, operation: ApiOperation = 'register') {
     return normalizeApiError(new HttpErrorResponse({ status, error: body }), operation, fallback);

@@ -1,0 +1,31 @@
+:host { display: block; color: #1f2937; }
+.review-page { padding: 1.5rem; }
+.review-header, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.review-header { justify-content: space-between; margin-bottom: 2rem; }
+main > *, section > * { margin-bottom: 1rem; }
+button, .nav-link { min-height: 44px; padding: .65rem 1rem; border-radius: .5rem; }
+button { background: #4338ca; color: white; font-weight: 600; }
+button:hover:enabled { background: #3730a3; }
+button:disabled { background: #d1d5db; color: #374151; cursor: not-allowed; }
+.secondary { background: #e5e7eb; color: #1f2937; }
+.nav-link { background: white; color: #3730a3; text-decoration: underline; }
+a { color: #3730a3; text-decoration: underline; }
+:is(button, input, a, summary):focus-visible, .question:focus { outline: 3px solid #1d4ed8; outline-offset: 3px; }
+.nav-link:focus-visible { outline-color: white; }
+.count-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(135px, 1fr)); gap: 1rem; }
+.count-grid div { padding: 1rem; border-radius: .5rem; background: #f3f4f6; }
+dd { font-size: 1.7rem; font-weight: 700; }
+.notice, .feedback { background: #eef2ff; padding: 1rem; border-radius: .5rem; }
+.feedback:empty { padding: 0; }
+.error { color: #991b1b; background: #fef2f2; padding: 1rem; border-radius: .5rem; }
+.option { display: flex; gap: .8rem; align-items: center; min-height: 56px; padding: 1rem; margin: .6rem 0; border: 2px solid #9ca3af; border-radius: .5rem; cursor: pointer; }
+.option.selected { border-color: #4338ca; background: #eef2ff; }
+.option:focus-within { outline: 3px solid #1d4ed8; outline-offset: 2px; }
+input[type=radio] { flex-shrink: 0; accent-color: #4338ca; }
+input[type=number] { display: block; border: 1px solid #6b7280; border-radius: .4rem; padding: .6rem; width: 7rem; }
+li { padding: .75rem 0; border-bottom: 1px solid #d1d5db; }
+time, .blocked { display: block; }
+.blocked { color: #92400e; }
+progress { width: 100%; accent-color: #4338ca; }
+main, .option, li, .question, .feedback { overflow-wrap: anywhere; min-width: 0; }
+@media (max-width: 480px) { .review-page { padding: .75rem; } .actions { align-items: stretch; flex-direction: column; } }
