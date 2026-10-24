@@ -13,7 +13,7 @@ F6 — Spaced Repetition remains the next development priority. This register do
 
 During R7 verification, dependency tooling reported 91 vulnerability findings, including 4 critical findings. Their applicability to VocabularyApp has not yet been established.
 
-See the [R7 Phase 8 verification results](../Updates/R7-api-contracts-phase-8-verification-results.md) for the recorded dependency warnings.
+See the [R7 Phase 8 verification results](../Updates/R7-Remediation/R7-api-contracts-phase-8-verification-results.md) for the recorded dependency warnings.
 
 ### Decision
 

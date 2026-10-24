@@ -90,6 +90,6 @@ Content-Type: application/json
 GET {{baseUrl}}/api/quiz/history?take=5
 Authorization: Bearer {{token}}
 
-# Contracts: ../Docs/Updates/R7-api-contract-reference.md.
+# Contracts: ../Docs/Updates/R7-Remediation/R7-api-contract-reference.md.
 # AE = six-field application/json. VE = extended application/problem+json.
 # Framework Bearer 401 may have an empty body.
